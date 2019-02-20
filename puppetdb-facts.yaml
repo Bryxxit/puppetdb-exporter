@@ -1,0 +1,6 @@
+---
+facts:
+  - 'uptime_seconds'
+  - 'os.family'
+nodes: true
+port: 8080
