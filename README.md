@@ -28,3 +28,4 @@ The config file is fairly short for now and is yaml based following parameters a
 - key: The path to the key file for ssl
 - ca: The path to the ca file for ssl
 - cert: The path to the cert file for ssl
+- interval: The interval between collections default to 15 seconds
