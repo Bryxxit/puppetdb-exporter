@@ -283,6 +283,7 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool) {
 	}
 	// Reset nodes values
 	statusTotal.Reset()
+	statusNodesGuage.Reset()
 	resourcesNodeGuage.Reset()
 	timeNodeGuage.Reset()
 	eventNodeGuage.Reset()
