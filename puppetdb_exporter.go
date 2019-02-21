@@ -57,7 +57,7 @@ var statusTotal = prometheus.NewGaugeVec(
 		Name: "puppetdb_status_total",
 		Help: "Automated count for the specified report status",
 	},
-	[]string{"status", "environment"},
+	[]string{"status", "puppet_environment"},
 )
 
 var statusNodesGuage = prometheus.NewGaugeVec(
@@ -65,7 +65,7 @@ var statusNodesGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_status_node_guage",
 		Help: "Automated count for the report status per node",
 	},
-	[]string{"status", "value", "environment", "node"},
+	[]string{"status", "value", "puppet_environment", "node"},
 )
 
 var resourcesNodeGuage = prometheus.NewGaugeVec(
@@ -73,7 +73,7 @@ var resourcesNodeGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_report_resources_node_guage",
 		Help: "Automated count for the report resources per node",
 	},
-	[]string{"name", "environment", "node"},
+	[]string{"name", "puppet_environment", "node"},
 )
 
 var timeNodeGuage = prometheus.NewGaugeVec(
@@ -81,7 +81,7 @@ var timeNodeGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_report_time_node_guage",
 		Help: "Automated count for the report time per node",
 	},
-	[]string{"name", "environment", "node"},
+	[]string{"name", "puppet_environment", "node"},
 )
 
 var eventNodeGuage = prometheus.NewGaugeVec(
@@ -89,7 +89,7 @@ var eventNodeGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_report_event_node_guage",
 		Help: "Automated count for the report time per node",
 	},
-	[]string{"name", "environment", "node"},
+	[]string{"name", "puppet_environment", "node"},
 )
 
 func init() {
