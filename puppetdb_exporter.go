@@ -68,6 +68,29 @@ var statusNodesGuage = prometheus.NewGaugeVec(
 	[]string{"status", "value", "environment", "node"},
 )
 
+var resourcesNodeGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppetdb_report_resources_node_guage",
+		Help: "Automated count for the report resources per node",
+	},
+	[]string{"name", "environment", "node"},
+)
+
+var timeNodeGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppetdb_report_time_node_guage",
+		Help: "Automated count for the report time per node",
+	},
+	[]string{"name", "environment", "node"},
+)
+
+var eventNodeGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppetdb_report_event_node_guage",
+		Help: "Automated count for the report time per node",
+	},
+	[]string{"name", "environment", "node"},
+)
 
 func init() {
 	// Register the summary and the histogram with Prometheus's default registry.
@@ -77,6 +100,9 @@ func init() {
 	prometheus.MustRegister(factNodeGuage)
 	prometheus.MustRegister(statusTotal)
 	prometheus.MustRegister(statusNodesGuage)
+	prometheus.MustRegister(resourcesNodeGuage)
+	prometheus.MustRegister(timeNodeGuage)
+	prometheus.MustRegister(eventNodeGuage)
 
 }
 
@@ -153,19 +179,19 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool) {
 			statusTotal.WithLabelValues(report.Metrics.Data[3].Name, report.Environment).Inc()
 			statusTotal.WithLabelValues(report.Metrics.Data[3].Name, "All").Inc()
 			status = report.Metrics.Data[3].Name
-			value = strconv.Itoa(report.Metrics.Data[3].Value)
+			value = strconv.Itoa(int(report.Metrics.Data[3].Value))
 		} else if report.Metrics.Data[2].Value > 0 {
 			//println("2 " + report.Metrics.Data[2].Name)
 			statusTotal.WithLabelValues(report.Metrics.Data[2].Name, report.Environment).Inc()
 			statusTotal.WithLabelValues(report.Metrics.Data[2].Name, "All").Inc()
 			status = report.Metrics.Data[2].Name
-			value = strconv.Itoa(report.Metrics.Data[2].Value)
+			value = strconv.Itoa(int(report.Metrics.Data[2].Value))
 		} else if report.Metrics.Data[1].Value > 0 {
 			//println("1 " + report.Metrics.Data[1].Name)
 			statusTotal.WithLabelValues(report.Metrics.Data[1].Name, report.Environment).Inc()
 			statusTotal.WithLabelValues(report.Metrics.Data[1].Name, "All").Inc()
 			status = report.Metrics.Data[1].Name
-			value = strconv.Itoa(report.Metrics.Data[1].Value)
+			value = strconv.Itoa(int(report.Metrics.Data[1].Value))
 		} else {
 			//println("0 unchanged")
 			statusTotal.WithLabelValues("unchanged", "All").Inc()
@@ -174,6 +200,17 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool) {
 
 		if nodes {
 			statusNodesGuage.WithLabelValues(status, value, report.Environment, report.CertName).Inc()
+		}
+
+		// now for the new metrics this might create some duplicates
+		for _, metric := range report.Metrics.Data {
+			if metric.Category == "time" {
+				timeNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+			} else if metric.Category == "events" {
+				eventNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+			} else if metric.Category == "resources" {
+				resourcesNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+			}
 		}
 	}
 }
@@ -234,7 +271,6 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool) {
 		}
 	}
 }
-
 
 func GenerateReportsMetrics(c *puppetdb.Client, nodes bool) {
 	nodesArr, err := c.Nodes()
