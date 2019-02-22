@@ -338,7 +338,7 @@ func main() {
 	if c.Port == 0 {
 		c.Port = 8080
 	}
-	c.Debug = true
+	//c.Debug = true
 	if c.SSL {
 		if c.Debug {
 			log.Print("SSL was configured continuing with ssl settings on https.")

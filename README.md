@@ -29,3 +29,4 @@ The config file is fairly short for now and is yaml based following parameters a
 - ca: The path to the ca file for ssl
 - cert: The path to the cert file for ssl
 - interval: The interval between collections default to 15 seconds
+- debug: Logs some stuff that is happening and what metrics ware found from puppetdb. This may result in a lot of log entries/
