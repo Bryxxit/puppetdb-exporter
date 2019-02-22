@@ -171,39 +171,12 @@ func addGaugeMetricfactsString(facts []puppetdb.FactJSON, nodes bool) {
 	}
 }
 
-func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool) {
+func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node puppetdb.NodeJSON) {
 	for _, report := range reports {
-		status := "unchanged"
-		value := "1"
-		if report.Metrics.Data[3].Value > 0 {
-			//println("3 " + report.Metrics.Data[3].Name)
-			statusTotal.WithLabelValues(report.Metrics.Data[3].Name, report.Environment).Inc()
-			statusTotal.WithLabelValues(report.Metrics.Data[3].Name, "All").Inc()
-			status = report.Metrics.Data[3].Name
-			value = strconv.Itoa(int(report.Metrics.Data[3].Value))
-		} else if report.Metrics.Data[2].Value > 0 {
-			//println("2 " + report.Metrics.Data[2].Name)
-			statusTotal.WithLabelValues(report.Metrics.Data[2].Name, report.Environment).Inc()
-			statusTotal.WithLabelValues(report.Metrics.Data[2].Name, "All").Inc()
-			status = report.Metrics.Data[2].Name
-			value = strconv.Itoa(int(report.Metrics.Data[2].Value))
-		} else if report.Metrics.Data[1].Value > 0 {
-			//println("1 " + report.Metrics.Data[1].Name)
-			statusTotal.WithLabelValues(report.Metrics.Data[1].Name, report.Environment).Inc()
-			statusTotal.WithLabelValues(report.Metrics.Data[1].Name, "All").Inc()
-			status = report.Metrics.Data[1].Name
-			value = strconv.Itoa(int(report.Metrics.Data[1].Value))
-		} else {
-			//println("0 unchanged")
-			statusTotal.WithLabelValues("unchanged", "All").Inc()
-			statusTotal.WithLabelValues("unchanged", report.Environment).Inc()
-		}
 
-		if nodes {
-			statusNodesGuage.WithLabelValues(status, value, report.Environment, report.CertName).Inc()
-		}
-
-		// now for the new metrics this might create some duplicates
+		failed := 0.0
+		cor_changes := 0.0
+		changes := 0.0
 		for _, metric := range report.Metrics.Data {
 			if metric.Category == "time" {
 				timeNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
@@ -211,6 +184,38 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool) {
 				eventNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
 			} else if metric.Category == "resources" {
 				resourcesNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+				if metric.Name == "failed" {
+					failed = metric.Value
+				}
+				if metric.Name == "changed" {
+					changes = metric.Value
+				}
+				if metric.Name == "corrective_change" {
+					cor_changes = metric.Value
+				}
+			}
+		}
+
+		statusTotal.WithLabelValues(node.LatestReportStatus, "All").Inc()
+		statusTotal.WithLabelValues(node.LatestReportStatus, node.ReportEnvironment).Inc()
+
+		if nodes {
+			if node.LatestReportStatus == "unchanged" {
+				statusNodesGuage.WithLabelValues(report.Status, "1", report.Environment, report.CertName).Inc()
+			}
+			if node.LatestReportStatus == "failed" {
+				value := strconv.Itoa(int(failed))
+				statusNodesGuage.WithLabelValues(report.Status, value, report.Environment, report.CertName).Inc()
+			}
+			if node.LatestReportStatus == "changed" {
+				if cor_changes > 0 {
+					value := strconv.Itoa(int(cor_changes))
+					statusNodesGuage.WithLabelValues("corrective_change", value, report.Environment, report.CertName).Inc()
+				}
+				if changes > 0 {
+					value := strconv.Itoa(int(changes))
+					statusNodesGuage.WithLabelValues("changed", value, report.Environment, report.CertName).Inc()
+				}
 			}
 		}
 	}
@@ -243,6 +248,7 @@ type Conf struct {
 	Ca       string   `yaml:"ca"`
 	Cert     string   `yaml:"cert"`
 	Interval int      `yaml:"interval"`
+	Debug    bool     `yaml:"debug"`
 }
 
 func (c *Conf) getConf(configFile string) *Conf {
@@ -259,10 +265,17 @@ func (c *Conf) getConf(configFile string) *Conf {
 	return c
 }
 
-func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool) {
+func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug bool) {
+	if debug {
+		log.Print("Resetting facts interfaces.")
+	}
 	factTotal.Reset()
 	factNodeGuage.Reset()
+	if debug {
+		log.Print("Done resetting facts interfaces.")
+	}
 	for _, fact := range facts {
+		// TODO more fact debugging
 		fA := strings.Split(fact, ".")
 		if len(fA) == 1 {
 			facts2, _ := getBaseMetric(fA[0], c)
@@ -276,10 +289,19 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool) {
 	}
 }
 
-func GenerateReportsMetrics(c *puppetdb.Client, nodes bool) {
+func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool) {
+	if debug {
+		log.Print("Retrieving nodes.")
+	}
 	nodesArr, err := c.Nodes()
+
 	if err != nil {
 		log.Print(err)
+	}
+	if debug {
+		i := len(nodesArr)
+		log.Printf("Nodes collected found %d nodes", i)
+		log.Print("Ressting status and node metrics interfaces.")
 	}
 	// Reset nodes values
 	statusTotal.Reset()
@@ -287,10 +309,16 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool) {
 	resourcesNodeGuage.Reset()
 	timeNodeGuage.Reset()
 	eventNodeGuage.Reset()
+	if debug {
+		log.Print("Done resetting the interfaces")
+	}
 
 	for _, node := range nodesArr {
 		res, err := c.ReportByHash(node.LatestReportHash)
-		addGaugeMetricStatusString(res, nodes)
+		if debug {
+			log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus)
+		}
+		addGaugeMetricStatusString(res, nodes, node)
 		if err != nil {
 			log.Print(err)
 		}
@@ -310,13 +338,16 @@ func main() {
 	if c.Port == 0 {
 		c.Port = 8080
 	}
-
+	c.Debug = true
 	if c.SSL {
+		if c.Debug {
+			log.Print("SSL was configured continuing with ssl settings on https.")
+		}
 		go func() {
 			for {
 				cl := puppetdb.NewClientSSL(c.Host, c.Port, c.Key, c.Cert, c.Ca, false)
-				GenerateFactsMetrics(c.Facts, cl, c.Nodes)
-				GenerateReportsMetrics(cl, c.Nodes)
+				GenerateFactsMetrics(c.Facts, cl, c.Nodes, c.Debug)
+				GenerateReportsMetrics(cl, c.Nodes, c.Debug)
 				i := time.Duration(15)
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
@@ -326,11 +357,15 @@ func main() {
 		}()
 
 	} else {
+		if c.Debug {
+			log.Print("SSL was not configured continuing with http.")
+
+		}
 		go func() {
 			for {
 				cl := puppetdb.NewClient(c.Host, c.Port, false)
-				GenerateFactsMetrics(c.Facts, cl, c.Nodes)
-				GenerateReportsMetrics(cl, c.Nodes)
+				GenerateFactsMetrics(c.Facts, cl, c.Nodes, c.Debug)
+				GenerateReportsMetrics(cl, c.Nodes, c.Debug)
 				i := time.Duration(15)
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
@@ -340,7 +375,13 @@ func main() {
 		}()
 
 	}
-
+	i := 15
+	if c.Interval != 0 {
+		i = c.Interval
+	}
+	if c.Debug {
+		log.Printf("Starting server on port %d on endpoint %s. Scrape interval is %ds", c.Port, endP, i)
+	}
 	//// Expose the registered metrics via HTTP.
 	http.Handle(*endP, promhttp.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
