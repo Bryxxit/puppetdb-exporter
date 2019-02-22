@@ -171,7 +171,7 @@ func addGaugeMetricfactsString(facts []puppetdb.FactJSON, nodes bool) {
 	}
 }
 
-func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node puppetdb.NodeJSON) {
+func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node puppetdb.NodeJSON, statusArr map[string]map[string]int) {
 	for _, report := range reports {
 
 		failed := 0.0
@@ -196,8 +196,28 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 			}
 		}
 
-		statusTotal.WithLabelValues(node.LatestReportStatus, "All").Inc()
-		statusTotal.WithLabelValues(node.LatestReportStatus, node.ReportEnvironment).Inc()
+		if _, ok := statusArr["All"]; ok {
+			if _, ok := statusArr["All"][node.LatestReportStatus]; ok {
+				statusArr["All"][node.LatestReportStatus] = statusArr["All"][node.LatestReportStatus] + 1
+			} else {
+				statusArr["All"][node.LatestReportStatus] = 1
+			}
+		} else {
+			statusArr["All"] = map[string]int{
+				node.LatestReportStatus: 1,
+			}
+		}
+		if _, ok := statusArr[node.ReportEnvironment]; ok {
+			if _, ok := statusArr[node.ReportEnvironment][node.LatestReportStatus]; ok {
+				statusArr[node.ReportEnvironment][node.LatestReportStatus] = statusArr[node.ReportEnvironment][node.LatestReportStatus] + 1
+			} else {
+				statusArr[node.ReportEnvironment][node.LatestReportStatus] = 1
+			}
+		} else {
+			statusArr[node.ReportEnvironment] = map[string]int{
+				node.LatestReportStatus: 1,
+			}
+		}
 
 		if nodes {
 			if node.LatestReportStatus == "unchanged" {
@@ -304,7 +324,6 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool) {
 		log.Print("Ressting status and node metrics interfaces.")
 	}
 	// Reset nodes values
-	statusTotal.Reset()
 	statusNodesGuage.Reset()
 	resourcesNodeGuage.Reset()
 	timeNodeGuage.Reset()
@@ -313,16 +332,24 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool) {
 		log.Print("Done resetting the interfaces")
 	}
 
+	var statusArr map[string]map[string]int = map[string]map[string]int{}
+
 	for _, node := range nodesArr {
 		res, err := c.ReportByHash(node.LatestReportHash)
 		if debug {
 			log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus)
 		}
-		addGaugeMetricStatusString(res, nodes, node)
+		addGaugeMetricStatusString(res, nodes, node, statusArr)
 		if err != nil {
 			log.Print(err)
 		}
 
+	}
+	statusTotal.Reset()
+	for key, _ := range statusArr {
+		for key2, value2 := range statusArr[key] {
+			statusTotal.WithLabelValues(key2, key).Set(float64(value2))
+		}
 	}
 
 }
