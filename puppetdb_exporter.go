@@ -197,26 +197,33 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 			}
 		}
 
+		stat := node.LatestReportStatus
+		if stat == "changed" {
+			if cor_changes > 0.0 {
+				stat = "corrective_changes"
+			}
+		}
+
 		if _, ok := statusArr["All"]; ok {
-			if _, ok := statusArr["All"][node.LatestReportStatus]; ok {
-				statusArr["All"][node.LatestReportStatus] = statusArr["All"][node.LatestReportStatus] + 1
+			if _, ok := statusArr["All"][stat]; ok {
+				statusArr["All"][stat] = statusArr["All"][stat] + 1
 			} else {
-				statusArr["All"][node.LatestReportStatus] = 1
+				statusArr["All"][stat] = 1
 			}
 		} else {
 			statusArr["All"] = map[string]int{
-				node.LatestReportStatus: 1,
+				stat: 1,
 			}
 		}
 		if _, ok := statusArr[node.ReportEnvironment]; ok {
-			if _, ok := statusArr[node.ReportEnvironment][node.LatestReportStatus]; ok {
-				statusArr[node.ReportEnvironment][node.LatestReportStatus] = statusArr[node.ReportEnvironment][node.LatestReportStatus] + 1
+			if _, ok := statusArr[node.ReportEnvironment][stat]; ok {
+				statusArr[node.ReportEnvironment][stat] = statusArr[node.ReportEnvironment][stat] + 1
 			} else {
-				statusArr[node.ReportEnvironment][node.LatestReportStatus] = 1
+				statusArr[node.ReportEnvironment][stat] = 1
 			}
 		} else {
 			statusArr[node.ReportEnvironment] = map[string]int{
-				node.LatestReportStatus: 1,
+				stat: 1,
 			}
 		}
 
