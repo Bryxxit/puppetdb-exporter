@@ -177,6 +177,7 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 		failed := 0.0
 		cor_changes := 0.0
 		changes := 0.0
+
 		for _, metric := range report.Metrics.Data {
 			if metric.Category == "time" {
 				timeNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
@@ -269,6 +270,7 @@ type Conf struct {
 	Cert     string   `yaml:"cert"`
 	Interval int      `yaml:"interval"`
 	Debug    bool     `yaml:"debug"`
+	Timeout  int      `yaml:"timeout"`
 }
 
 func (c *Conf) getConf(configFile string) *Conf {
@@ -309,7 +311,7 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug 
 	}
 }
 
-func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool) {
+func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout int) {
 	if debug {
 		log.Print("Retrieving nodes.")
 	}
@@ -335,13 +337,62 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool) {
 	var statusArr map[string]map[string]int = map[string]map[string]int{}
 
 	for _, node := range nodesArr {
-		res, err := c.ReportByHash(node.LatestReportHash)
-		if debug {
-			log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus)
-		}
-		addGaugeMetricStatusString(res, nodes, node, statusArr)
+
+		// eval time
+		layout := "2006-01-02T15:04:05.000Z"
+		t, err := time.Parse(layout, node.ReportTimestamp)
 		if err != nil {
-			log.Print(err)
+			fmt.Println(err)
+		}
+		duration := time.Since(t)
+		timeout := float64(timeout)
+		// if timeout reached we do not parse this node
+		if duration.Seconds() > timeout {
+			if debug {
+				log.Printf("Node % has reached the timeout and is in unresponsive state latest report was %s", node.Certname, node.ReportTimestamp)
+			}
+			timeoutString := strconv.Itoa(int(duration.Seconds()))
+
+			if nodes {
+				statusNodesGuage.WithLabelValues("unresponsive", timeoutString, node.ReportEnvironment, node.Certname).Inc()
+			}
+			//TODO split stuff more in smaller functions
+
+			// set the unresponsive state
+			if _, ok := statusArr["All"]; ok {
+				if _, ok := statusArr["All"]["unresponsive"]; ok {
+					statusArr["All"]["unresponsive"] = statusArr["All"]["unresponsive"] + 1
+				} else {
+					statusArr["All"]["unresponsive"] = 1
+				}
+			} else {
+				statusArr["All"] = map[string]int{
+					"unresponsive": 1,
+				}
+			}
+			if _, ok := statusArr[node.ReportEnvironment]; ok {
+				if _, ok := statusArr[node.ReportEnvironment]["unresponsive"]; ok {
+					statusArr[node.ReportEnvironment]["unresponsive"] = statusArr[node.ReportEnvironment]["unresponsive"] + 1
+				} else {
+					statusArr[node.ReportEnvironment]["unresponsive"] = 1
+				}
+			} else {
+				statusArr[node.ReportEnvironment] = map[string]int{
+					"unresponsive": 1,
+				}
+			}
+
+			// if node is okay we parse it
+		} else {
+			res, err := c.ReportByHash(node.LatestReportHash)
+			if debug {
+				log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s latest report time is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus, node.ReportTimestamp)
+			}
+			addGaugeMetricStatusString(res, nodes, node, statusArr)
+			if err != nil {
+				log.Print(err)
+			}
+
 		}
 
 	}
@@ -365,6 +416,9 @@ func main() {
 	if c.Port == 0 {
 		c.Port = 8080
 	}
+	if c.Timeout == 0 {
+		c.Timeout = 3600
+	}
 	//c.Debug = true
 	if c.SSL {
 		if c.Debug {
@@ -374,7 +428,7 @@ func main() {
 			for {
 				cl := puppetdb.NewClientSSL(c.Host, c.Port, c.Key, c.Cert, c.Ca, false)
 				GenerateFactsMetrics(c.Facts, cl, c.Nodes, c.Debug)
-				GenerateReportsMetrics(cl, c.Nodes, c.Debug)
+				GenerateReportsMetrics(cl, c.Nodes, c.Debug, c.Timeout)
 				i := time.Duration(15)
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
@@ -392,7 +446,7 @@ func main() {
 			for {
 				cl := puppetdb.NewClient(c.Host, c.Port, false)
 				GenerateFactsMetrics(c.Facts, cl, c.Nodes, c.Debug)
-				GenerateReportsMetrics(cl, c.Nodes, c.Debug)
+				GenerateReportsMetrics(cl, c.Nodes, c.Debug, c.Timeout)
 				i := time.Duration(15)
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
