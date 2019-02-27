@@ -93,6 +93,14 @@ var eventNodeGuage = prometheus.NewGaugeVec(
 	[]string{"name", "puppet_environment", "node"},
 )
 
+var timeLastReportNodeGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppetdb_last_report_time_node_guage",
+		Help: "Automated guage for the last report time of a node",
+	},
+	[]string{"puppet_environment", "node"},
+)
+
 func init() {
 	// Register the summary and the histogram with Prometheus's default registry.
 	prometheus.MustRegister(factGuage)
@@ -104,6 +112,7 @@ func init() {
 	prometheus.MustRegister(resourcesNodeGuage)
 	prometheus.MustRegister(timeNodeGuage)
 	prometheus.MustRegister(eventNodeGuage)
+	prometheus.MustRegister(timeLastReportNodeGuage)
 
 }
 
@@ -171,9 +180,19 @@ func addGaugeMetricfactsString(facts []puppetdb.FactJSON, nodes bool) {
 	}
 }
 
+func addLastReportTimeMetric(node puppetdb.NodeJSON) {
+	layout := "2006-01-02T15:04:05.000Z"
+	t, err := time.Parse(layout, node.ReportTimestamp)
+	if err != nil {
+		fmt.Println(err)
+	}
+	duration := time.Since(t).Seconds()
+	timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+
+}
+
 func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node puppetdb.NodeJSON, statusArr map[string]map[string]int) {
 	for _, report := range reports {
-
 		failed := 0.0
 		cor_changes := 0.0
 		changes := 0.0
@@ -344,6 +363,8 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 	var statusArr map[string]map[string]int = map[string]map[string]int{}
 
 	for _, node := range nodesArr {
+		// set the report time
+		addLastReportTimeMetric(node)
 
 		// eval time
 		layout := "2006-01-02T15:04:05.000Z"
@@ -363,7 +384,6 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 			if nodes {
 				statusNodesGuage.WithLabelValues("unresponsive", timeoutString, node.ReportEnvironment, node.Certname).Inc()
 			}
-			//TODO split stuff more in smaller functions
 
 			// set the unresponsive state
 			if _, ok := statusArr["All"]; ok {
