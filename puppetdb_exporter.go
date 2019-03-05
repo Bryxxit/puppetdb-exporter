@@ -3,10 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/negast/go-puppetdb"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -14,6 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	puppetdb "github.com/negast/go-puppetdb"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	yaml "gopkg.in/yaml.v2"
 )
 
 var (
@@ -318,6 +319,7 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug 
 		log.Print("Resetting facts interfaces.")
 	}
 	factTotal.Reset()
+	factGuage.Reset()
 	factNodeGuage.Reset()
 	if debug {
 		log.Print("Done resetting facts interfaces.")
