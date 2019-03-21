@@ -102,6 +102,142 @@ var timeLastReportNodeGuage = prometheus.NewGaugeVec(
 	[]string{"puppet_environment", "node"},
 )
 
+var masterHttpGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_http_guage",
+		Help: "Http stats for the master",
+	},
+	[]string{"master", "route", "type"},
+)
+
+var masterHttpClientGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_http_client_guage",
+		Help: "Http client stats for the master",
+	},
+	[]string{"master", "metric_name", "type", "metric_id"},
+)
+
+var masterJVMGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_jvm_guage",
+		Help: "jvm stats for the master",
+	},
+	[]string{"master", "metric"},
+)
+
+var masterMemoryGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_memory_guage",
+		Help: "memory stats for the master both heap and non heap memory",
+	},
+	[]string{"master", "is_heap", "type"},
+)
+
+var masterGCCount = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_gc_count",
+		Help: "GC count for the master",
+	},
+	[]string{"master", "ps_type"},
+)
+
+var masterGCTime = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_gc_time",
+		Help: "GC time in ms for the master",
+	},
+	[]string{"master", "ps_type"},
+)
+
+var masterGCDuration = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_gc_duration",
+		Help: "jDuration since the last info in ms",
+	},
+	[]string{"master", "ps_type"},
+)
+
+var masterFile = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_file_guage",
+		Help: "file descriptors count",
+	},
+	[]string{"master", "name"},
+)
+
+var masterThread = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_thread_guage",
+		Help: "Thread count for the puppet master",
+	},
+	[]string{"master", "name"},
+)
+
+var masterRuby = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_jruby_guage",
+		Help: "Thread count for the puppet master",
+	},
+	[]string{"master", "name"},
+)
+
+var masterBorrowedInstance = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_borrowed_instance_time",
+		Help: " count for the puppet master",
+	},
+	[]string{"master", "uri", "method", "routeId"},
+)
+
+var masterBorrowedInstanceDuration = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_borrowed_instance_duration_ms",
+		Help: "Borrowed instance metrics for the puppet master",
+	},
+	[]string{"master", "uri", "method", "routeId"},
+)
+
+var masterFunction = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_profiler_function_guage",
+		Help: "Profiler function metrics for the puppet master",
+	},
+	[]string{"master", "function", "type"},
+)
+
+var masterResource = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_profiler_resource_guage",
+		Help: "Profiler resource metrics for the puppet master",
+	},
+	[]string{"master", "resource", "type"},
+)
+
+var masterCatalog = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_profiler_catalog_guage",
+		Help: "Profiler catalog metrics for the puppet master",
+	},
+	[]string{"master", "metric", "type"},
+)
+
+var masterPuppetdb = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_profiler_puppetdb_guage",
+		Help: "Profiler puppetdb metrics for the puppet master",
+	},
+	[]string{"master", "metric", "type"},
+)
+
+var masterState = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppet_master_state_guage",
+		Help: "Profiler puppetdb metrics for the puppet master",
+	},
+	[]string{"master", "service_version", "service_state", "detail_level"},
+)
+
 func init() {
 	// Register the summary and the histogram with Prometheus's default registry.
 	prometheus.MustRegister(factGuage)
@@ -114,6 +250,28 @@ func init() {
 	prometheus.MustRegister(timeNodeGuage)
 	prometheus.MustRegister(eventNodeGuage)
 	prometheus.MustRegister(timeLastReportNodeGuage)
+
+	prometheus.MustRegister(masterHttpGuage)
+	prometheus.MustRegister(masterHttpClientGuage)
+
+	prometheus.MustRegister(masterGCCount)
+	prometheus.MustRegister(masterGCDuration)
+	prometheus.MustRegister(masterGCTime)
+	prometheus.MustRegister(masterJVMGuage)
+	prometheus.MustRegister(masterMemoryGuage)
+	prometheus.MustRegister(masterFile)
+	prometheus.MustRegister(masterThread)
+
+	prometheus.MustRegister(masterRuby)
+	prometheus.MustRegister(masterBorrowedInstance)
+	prometheus.MustRegister(masterBorrowedInstanceDuration)
+
+	prometheus.MustRegister(masterResource)
+	prometheus.MustRegister(masterFunction)
+	prometheus.MustRegister(masterCatalog)
+	prometheus.MustRegister(masterPuppetdb)
+
+	prometheus.MustRegister(masterState)
 
 }
 
@@ -287,17 +445,20 @@ func addGaugeMetricfactsStringPath(facts []puppetdb.FactJSON, path string, nodes
 }
 
 type Conf struct {
-	Facts    []string `yaml:"facts"`
-	Nodes    bool     `yaml:"nodes"`
-	Host     string   `yaml:"host"`
-	Port     int      `yaml:"port"`
-	SSL      bool     `yaml:"ssl"`
-	Key      string   `yaml:"key"`
-	Ca       string   `yaml:"ca"`
-	Cert     string   `yaml:"cert"`
-	Interval int      `yaml:"interval"`
-	Debug    bool     `yaml:"debug"`
-	Timeout  int      `yaml:"timeout"`
+	Facts        []string `yaml:"facts"`
+	Nodes        bool     `yaml:"nodes"`
+	Host         string   `yaml:"host"`
+	Port         int      `yaml:"port"`
+	MasterEnable bool     `yaml:"masterEnable"`
+	MasterHost   string   `yaml:"masterHost"`
+	MasterPort   int      `yaml:"masterPort"`
+	SSL          bool     `yaml:"ssl"`
+	Key          string   `yaml:"key"`
+	Ca           string   `yaml:"ca"`
+	Cert         string   `yaml:"cert"`
+	Interval     int      `yaml:"interval"`
+	Debug        bool     `yaml:"debug"`
+	Timeout      int      `yaml:"timeout"`
 }
 
 func (c *Conf) getConf(configFile string) *Conf {
@@ -434,6 +595,154 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 
 }
 
+func GeneratePuppetMasterMetrics(cl2 *puppetdb.ClientMaster, host string, debug bool) {
+	m, err := cl2.Master()
+	if err != nil {
+		log.Println(err.Error())
+	} else {
+		generateHttpMetrics(&m, host, debug)
+		masterState.WithLabelValues(host, m.Version, m.State, m.DetailLevel).Set(1)
+	}
+
+	j, err := cl2.Service()
+	if err != nil {
+		log.Println(err.Error())
+	} else {
+		generateJVMMetrics(&j, host, debug)
+	}
+	r, err := cl2.Jruby()
+	if err != nil {
+		log.Println(err.Error())
+	} else {
+		generateJrubyMetrics(&r, host, debug)
+	}
+	p, err := cl2.Profiler()
+	if err != nil {
+		log.Println(err.Error())
+	} else {
+		generateProfileMetrics(&p, host, debug)
+	}
+}
+
+func generateHttpMetrics(master *puppetdb.MasterMetrics, host string, debug bool) {
+	for _, metric := range *master.Status.Experimental.HttpMetrics {
+		masterHttpGuage.WithLabelValues(host, metric.RouteId, "aggregate").Set(float64(metric.Aggregate))
+		masterHttpGuage.WithLabelValues(host, metric.RouteId, "count").Set(float64(metric.Count))
+		masterHttpGuage.WithLabelValues(host, metric.RouteId, "mean").Set(float64(metric.Mean))
+	}
+
+	for _, metric := range *master.Status.Experimental.HttpClientMetrics {
+		masterHttpClientGuage.WithLabelValues(host, metric.MetricName, "aggregate", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Aggregate))
+		masterHttpClientGuage.WithLabelValues(host, metric.MetricName, "count", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Count))
+		masterHttpClientGuage.WithLabelValues(host, metric.MetricName, "mean", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Mean))
+
+	}
+}
+
+func generateJVMMetrics(jvm *puppetdb.ServiceMetrics, host string, debug bool) {
+	//prometheus.MustRegister(masterFile)
+	masterFile.WithLabelValues(host, "used").Set(float64(jvm.Status.Experimental.JVMMetrics.FileDescriptors.Used))
+	masterFile.WithLabelValues(host, "max").Set(float64(jvm.Status.Experimental.JVMMetrics.FileDescriptors.Max))
+
+	// prometheus.MustRegister(masterThread)
+	masterThread.WithLabelValues(host, "normal").Set(float64(jvm.Status.Experimental.JVMMetrics.Threading.ThreadCount))
+	masterThread.WithLabelValues(host, "peak").Set(float64(jvm.Status.Experimental.JVMMetrics.Threading.PeakThreadCount))
+
+	// prometheus.MustRegister(masterJVMGuage)
+	masterJVMGuage.WithLabelValues(host, "cpu_usage").Set(jvm.Status.Experimental.JVMMetrics.CpuUsage)
+	masterJVMGuage.WithLabelValues(host, "up_time_ms").Set(float64(jvm.Status.Experimental.JVMMetrics.UptimeMs))
+	masterJVMGuage.WithLabelValues(host, "gc_cpu_usage").Set(jvm.Status.Experimental.JVMMetrics.GCCpuUsage)
+	masterJVMGuage.WithLabelValues(host, "start_time_ms").Set(float64(jvm.Status.Experimental.JVMMetrics.StartTimeMs))
+
+	// prometheus.MustRegister(masterMemoryGuage)
+	masterMemoryGuage.WithLabelValues(host, "true", "commited").Set(float64(jvm.Status.Experimental.JVMMetrics.HeapMemory.Committed))
+	masterMemoryGuage.WithLabelValues(host, "true", "init").Set(float64(jvm.Status.Experimental.JVMMetrics.HeapMemory.Init))
+	masterMemoryGuage.WithLabelValues(host, "true", "max").Set(float64(jvm.Status.Experimental.JVMMetrics.HeapMemory.Max))
+	masterMemoryGuage.WithLabelValues(host, "true", "used").Set(float64(jvm.Status.Experimental.JVMMetrics.HeapMemory.Used))
+
+	masterMemoryGuage.WithLabelValues(host, "false", "commited").Set(float64(jvm.Status.Experimental.JVMMetrics.NonHeapMemory.Committed))
+	masterMemoryGuage.WithLabelValues(host, "false", "init").Set(float64(jvm.Status.Experimental.JVMMetrics.NonHeapMemory.Init))
+	masterMemoryGuage.WithLabelValues(host, "false", "max").Set(float64(jvm.Status.Experimental.JVMMetrics.NonHeapMemory.Max))
+	masterMemoryGuage.WithLabelValues(host, "false", "used").Set(float64(jvm.Status.Experimental.JVMMetrics.NonHeapMemory.Used))
+
+	// prometheus.MustRegister(masterGCCount)
+	masterGCCount.WithLabelValues(host, "scavenge").Set(float64(jvm.Status.Experimental.JVMMetrics.GCStats.PSScavenge.Count))
+	masterGCCount.WithLabelValues(host, "marksweep").Set(float64(jvm.Status.Experimental.JVMMetrics.GCStats.PSSweep.Count))
+
+	// prometheus.MustRegister(masterGCDuration)
+	masterGCDuration.WithLabelValues(host, "scavenge").Set(float64(jvm.Status.Experimental.JVMMetrics.GCStats.PSScavenge.LastGCInfo.DurationMs))
+	masterGCDuration.WithLabelValues(host, "marksweep").Set(float64(jvm.Status.Experimental.JVMMetrics.GCStats.PSSweep.LastGCInfo.DurationMs))
+
+	// prometheus.MustRegister(masterGCTime)
+	masterGCTime.WithLabelValues(host, "scavenge").Set(float64(jvm.Status.Experimental.JVMMetrics.GCStats.PSScavenge.TotalTimeMs))
+	masterGCTime.WithLabelValues(host, "marksweep").Set(float64(jvm.Status.Experimental.JVMMetrics.GCStats.PSSweep.TotalTimeMs))
+}
+
+func generateJrubyMetrics(r *puppetdb.JrubyMetrics, host string, debug bool) {
+	// prometheus.MustRegister(masterRuby)
+	masterRuby.WithLabelValues(host, "average_lock_wait_time").Set(float64(r.Status.Experimental.Metrics.AverageLockWaitTime))
+	masterRuby.WithLabelValues(host, "num_free_jrubies").Set(float64(r.Status.Experimental.Metrics.NumFreeJrubies))
+	masterRuby.WithLabelValues(host, "borrow_count").Set(float64(r.Status.Experimental.Metrics.BorrowCount))
+	masterRuby.WithLabelValues(host, "borrow_timeout_count").Set(float64(r.Status.Experimental.Metrics.BorrowTimeoutCount))
+	masterRuby.WithLabelValues(host, "avg_requested_jrubies").Set(float64(r.Status.Experimental.Metrics.AverageRequestedJrubies))
+
+	masterRuby.WithLabelValues(host, "return_count").Set(float64(r.Status.Experimental.Metrics.ReturnCount))
+	masterRuby.WithLabelValues(host, "borrow_retry_count").Set(float64(r.Status.Experimental.Metrics.BorrowRetryCount))
+	masterRuby.WithLabelValues(host, "average_borrow_time").Set(float64(r.Status.Experimental.Metrics.AverageBorrowTime))
+	masterRuby.WithLabelValues(host, "num_jrubies").Set(float64(r.Status.Experimental.Metrics.NumJrubies))
+	masterRuby.WithLabelValues(host, "requested_count").Set(float64(r.Status.Experimental.Metrics.RequestedCount))
+
+	masterRuby.WithLabelValues(host, "average_lock_held_time").Set(float64(r.Status.Experimental.Metrics.AverageLockHeldTime))
+	masterRuby.WithLabelValues(host, "queue_limit_hit_count").Set(float64(r.Status.Experimental.Metrics.QueueLimitHitCount))
+	masterRuby.WithLabelValues(host, "average_free_jrubies").Set(float64(r.Status.Experimental.Metrics.AverageFreeJrubies))
+	masterRuby.WithLabelValues(host, "num_pool_locks").Set(float64(r.Status.Experimental.Metrics.NumPoolLocks))
+	masterRuby.WithLabelValues(host, "average_wait_time").Set(float64(r.Status.Experimental.Metrics.AverageWaitTime))
+	masterRuby.WithLabelValues(host, "queue_limit-hit_rate").Set(float64(r.Status.Experimental.Metrics.QueueLimitHitRate))
+
+	// prometheus.MustRegister(masterBorrowedInstance)
+	masterBorrowedInstance.Reset()
+	masterBorrowedInstanceDuration.Reset()
+
+	for _, metric := range *r.Status.Experimental.Metrics.BorrowedInstances {
+		masterBorrowedInstance.WithLabelValues(host, metric.Reason.Request.Uri,
+			metric.Reason.Request.Method, metric.Reason.Request.RouteId).Set(float64(metric.Time))
+		masterBorrowedInstanceDuration.WithLabelValues(host, metric.Reason.Request.Uri,
+			metric.Reason.Request.Method, metric.Reason.Request.RouteId).Set(float64(metric.DurationMilis))
+	}
+}
+
+func generateProfileMetrics(p *puppetdb.Profiler, host string, debug bool) {
+	// prometheus.MustRegister(masterResource)
+	//masterResource.Reset()
+	for _, metric := range *p.Status.Experimental.ResourceMetrics {
+		masterResource.WithLabelValues(host, metric.Resource, "count").Set(float64(metric.Count))
+		masterResource.WithLabelValues(host, metric.Resource, "mean").Set(float64(metric.Mean))
+		masterResource.WithLabelValues(host, metric.Resource, "aggregate").Set(float64(metric.Aggregate))
+
+	}
+	//prometheus.MustRegister(masterFunction)
+	for _, metric := range *p.Status.Experimental.FunctionMetrics {
+		masterFunction.WithLabelValues(host, metric.Function, "count").Set(float64(metric.Count))
+		masterFunction.WithLabelValues(host, metric.Function, "mean").Set(float64(metric.Mean))
+		masterFunction.WithLabelValues(host, metric.Function, "aggregate").Set(float64(metric.Aggregate))
+
+	}
+	//prometheus.MustRegister(masterCatalog)
+	for _, metric := range *p.Status.Experimental.CatalogMetrics {
+		masterCatalog.WithLabelValues(host, metric.Metric, "count").Set(float64(metric.Count))
+		masterCatalog.WithLabelValues(host, metric.Metric, "mean").Set(float64(metric.Mean))
+		masterCatalog.WithLabelValues(host, metric.Metric, "aggregate").Set(float64(metric.Aggregate))
+
+	}
+	//prometheus.MustRegister(masterPuppetdb)
+	for _, metric := range *p.Status.Experimental.PuppetdbMetrics {
+		masterPuppetdb.WithLabelValues(host, metric.Metric, "count").Set(float64(metric.Count))
+		masterPuppetdb.WithLabelValues(host, metric.Metric, "mean").Set(float64(metric.Mean))
+		masterPuppetdb.WithLabelValues(host, metric.Metric, "aggregate").Set(float64(metric.Aggregate))
+
+	}
+}
+
 func main() {
 	flag.Parse()
 
@@ -442,12 +751,19 @@ func main() {
 	if c.Host == "" {
 		c.Host = "localhost"
 	}
+	if c.MasterHost == "" {
+		c.MasterHost = c.Host
+	}
 	if c.Port == 0 {
 		c.Port = 8080
+	}
+	if c.MasterPort == 0 {
+		c.Port = 8140
 	}
 	if c.Timeout == 0 {
 		c.Timeout = 3600
 	}
+
 	//c.Debug = true
 	if c.SSL {
 		if c.Debug {
@@ -462,6 +778,16 @@ func main() {
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
 				}
+				cl2 := puppetdb.NewClientSSLMaster(c.MasterHost, c.MasterPort, c.Key, c.Cert, c.Ca, c.Debug)
+				_, err := cl2.Master()
+				if err != nil {
+					print(err.Error())
+					masterState.WithLabelValues(c.MasterHost, "unknown", "down", "error").Set(0.0)
+				} else {
+					GeneratePuppetMasterMetrics(cl2, c.MasterHost, false)
+
+				}
+
 				time.Sleep(i * time.Second)
 			}
 		}()
@@ -480,6 +806,16 @@ func main() {
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
 				}
+				cl2 := puppetdb.NewClientSSLInsecureMaster(c.MasterHost, c.MasterPort, c.Debug)
+				_, err := cl2.Master()
+				if err != nil {
+					print(err.Error())
+					masterState.WithLabelValues(c.MasterHost, "unknown", "down", "error").Set(0.0)
+				} else {
+					GeneratePuppetMasterMetrics(cl2, c.MasterHost, false)
+
+				}
+
 				time.Sleep(i * time.Second)
 			}
 		}()
@@ -492,7 +828,7 @@ func main() {
 	if c.Debug {
 		log.Printf("Starting server on port %d on endpoint %s. Scrape interval is %ds", c.Port, endP, i)
 	}
-	//// Expose the registered metrics via HTTP.
+	// Expose the registered metrics via HTTP.
 	http.Handle(*endP, promhttp.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
