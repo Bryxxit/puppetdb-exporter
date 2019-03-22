@@ -206,13 +206,13 @@ var masterFunction = prometheus.NewGaugeVec(
 	[]string{"master", "function", "type"},
 )
 
-var masterFunctionTable = prometheus.NewGaugeVec(
-	prometheus.GaugeOpts{
-		Name: "puppet_master_profiler_function_table",
-		Help: "Profiler function metrics for the puppet master",
-	},
-	[]string{"master", "function", "count", "mean", "aggregate"},
-)
+//var masterFunctionTable = prometheus.NewGaugeVec(
+//	prometheus.GaugeOpts{
+//		Name: "puppet_master_profiler_function_table",
+//		Help: "Profiler function metrics for the puppet master",
+//	},
+//	[]string{"master", "function", "count", "mean", "aggregate"},
+//)
 
 var masterResource = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
@@ -276,7 +276,7 @@ func init() {
 
 	prometheus.MustRegister(masterResource)
 	prometheus.MustRegister(masterFunction)
-	prometheus.MustRegister(masterFunctionTable)
+	//prometheus.MustRegister(masterFunctionTable)
 
 	prometheus.MustRegister(masterCatalog)
 	prometheus.MustRegister(masterPuppetdb)
@@ -731,13 +731,13 @@ func generateProfileMetrics(p *puppetdb.Profiler, host string, debug bool) {
 
 	}
 	//prometheus.MustRegister(masterFunction)
-	masterFunctionTable.Reset()
+	//masterFunctionTable.Reset()
 	for _, metric := range *p.Status.Experimental.FunctionMetrics {
 		masterFunction.WithLabelValues(host, metric.Function, "count").Set(float64(metric.Count))
 		masterFunction.WithLabelValues(host, metric.Function, "mean").Set(float64(metric.Mean))
 		masterFunction.WithLabelValues(host, metric.Function, "aggregate").Set(float64(metric.Aggregate))
-		masterFunctionTable.WithLabelValues(host, metric.Function, strconv.Itoa(metric.Count),
-			strconv.Itoa(metric.Mean), strconv.Itoa(metric.Aggregate)).Set(1)
+		//masterFunctionTable.WithLabelValues(host, metric.Function, strconv.Itoa(metric.Count),
+		//	strconv.Itoa(metric.Mean), strconv.Itoa(metric.Aggregate)).Set(1)
 	}
 	//prometheus.MustRegister(masterCatalog)
 	for _, metric := range *p.Status.Experimental.CatalogMetrics {
