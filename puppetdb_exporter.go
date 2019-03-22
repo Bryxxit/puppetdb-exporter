@@ -782,6 +782,9 @@ func main() {
 			}
 		}()
 		if c.MasterEnable {
+			if c.Debug {
+				log.Println("Collecting master metrics")
+			}
 			go func() {
 				for {
 					i := time.Duration(15)
@@ -821,6 +824,9 @@ func main() {
 		}()
 
 		if c.MasterEnable {
+			if c.Debug {
+				log.Println("Collecting master metrics")
+			}
 			go func() {
 				for {
 					i := time.Duration(15)
