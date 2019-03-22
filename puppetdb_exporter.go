@@ -353,7 +353,7 @@ func addLastReportTimeMetric(node puppetdb.NodeJSON) {
 	layout := "2006-01-02T15:04:05.000Z"
 	t, err := time.Parse(layout, node.ReportTimestamp)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err.Error())
 	}
 	duration := time.Since(t).Seconds()
 	timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
@@ -510,6 +510,63 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug 
 	}
 }
 
+func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statusArr *map[string]map[string]int) {
+	if node.ReportTimestamp != "" {
+		addLastReportTimeMetric(node)
+		// eval time
+		layout := "2006-01-02T15:04:05.000Z"
+		t, err := time.Parse(layout, node.ReportTimestamp)
+		if err != nil {
+			log.Println(err.Error())
+		}
+		duration := time.Since(t)
+		timeout2 := float64(timeout)
+		if duration.Seconds() > timeout2 {
+			if debug {
+				log.Printf("Node % has reached the timeout and is in unresponsive state latest report was %s", node.Certname, node.ReportTimestamp)
+			}
+			timeoutString := strconv.Itoa(int(duration.Seconds()))
+
+			if nodes {
+				statusNodesGuage.WithLabelValues("unresponsive", timeoutString, node.ReportEnvironment, node.Certname).Inc()
+			}
+			setStateInarray(node, "unresponsive", statusArr)
+
+		}
+	} else {
+		if nodes {
+			statusNodesGuage.WithLabelValues("unreported", "", node.ReportEnvironment, node.Certname).Inc()
+		}
+		setStateInarray(node, "unreported", statusArr)
+
+	}
+}
+
+func setStateInarray(node puppetdb.NodeJSON, state string, statusArr *map[string]map[string]int) {
+	if _, ok := (*statusArr)["All"]; ok {
+		if _, ok := (*statusArr)["All"][state]; ok {
+			(*statusArr)["All"][state] = (*statusArr)["All"][state] + 1
+		} else {
+			(*statusArr)["All"][state] = 1
+		}
+	} else {
+		(*statusArr)["All"] = map[string]int{
+			state: 1,
+		}
+	}
+	if _, ok := (*statusArr)[node.ReportEnvironment]; ok {
+		if _, ok := (*statusArr)[node.ReportEnvironment][state]; ok {
+			(*statusArr)[node.ReportEnvironment][state] = (*statusArr)[node.ReportEnvironment][state] + 1
+		} else {
+			(*statusArr)[node.ReportEnvironment][state] = 1
+		}
+	} else {
+		(*statusArr)[node.ReportEnvironment] = map[string]int{
+			state: 1,
+		}
+	}
+}
+
 func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout int) {
 	if debug {
 		log.Print("Retrieving nodes.")
@@ -537,62 +594,33 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 
 	for _, node := range nodesArr {
 		// set the report time
-		addLastReportTimeMetric(node)
-
-		// eval time
-		layout := "2006-01-02T15:04:05.000Z"
-		t, err := time.Parse(layout, node.ReportTimestamp)
-		if err != nil {
-			fmt.Println(err)
-		}
-		duration := time.Since(t)
-		timeout := float64(timeout)
-		// if timeout reached we do not parse this node
-		if duration.Seconds() > timeout {
-			if debug {
-				log.Printf("Node % has reached the timeout and is in unresponsive state latest report was %s", node.Certname, node.ReportTimestamp)
-			}
-			timeoutString := strconv.Itoa(int(duration.Seconds()))
-
-			if nodes {
-				statusNodesGuage.WithLabelValues("unresponsive", timeoutString, node.ReportEnvironment, node.Certname).Inc()
-			}
-
-			// set the unresponsive state
-			if _, ok := statusArr["All"]; ok {
-				if _, ok := statusArr["All"]["unresponsive"]; ok {
-					statusArr["All"]["unresponsive"] = statusArr["All"]["unresponsive"] + 1
-				} else {
-					statusArr["All"]["unresponsive"] = 1
-				}
-			} else {
-				statusArr["All"] = map[string]int{
-					"unresponsive": 1,
-				}
-			}
-			if _, ok := statusArr[node.ReportEnvironment]; ok {
-				if _, ok := statusArr[node.ReportEnvironment]["unresponsive"]; ok {
-					statusArr[node.ReportEnvironment]["unresponsive"] = statusArr[node.ReportEnvironment]["unresponsive"] + 1
-				} else {
-					statusArr[node.ReportEnvironment]["unresponsive"] = 1
-				}
-			} else {
-				statusArr[node.ReportEnvironment] = map[string]int{
-					"unresponsive": 1,
-				}
-			}
-
-			// if node is okay we parse it
-		} else {
-			res, err := c.ReportByHash(node.LatestReportHash)
-			if debug {
-				log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s latest report time is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus, node.ReportTimestamp)
-			}
-			addGaugeMetricStatusString(res, nodes, node, statusArr)
+		if node.ReportTimestamp != "" {
+			// eval time
+			layout := "2006-01-02T15:04:05.000Z"
+			t, err := time.Parse(layout, node.ReportTimestamp)
 			if err != nil {
-				log.Print(err)
+				log.Println(err.Error())
 			}
+			duration := time.Since(t)
+			timeout := float64(timeout)
+			// if timeout reached we do not parse this node
+			if duration.Seconds() > timeout {
+				setState(node, nodes, debug, int(timeout), &statusArr)
 
+				// if node is okay we parse it
+			} else {
+				res, err := c.ReportByHash(node.LatestReportHash)
+				if debug {
+					log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s latest report time is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus, node.ReportTimestamp)
+				}
+				addGaugeMetricStatusString(res, nodes, node, statusArr)
+				if err != nil {
+					log.Print(err)
+				}
+
+			}
+		} else {
+			setState(node, nodes, debug, int(timeout), &statusArr)
 		}
 
 	}
@@ -602,7 +630,6 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 			statusTotal.WithLabelValues(key2, key).Set(float64(value2))
 		}
 	}
-
 }
 
 func GeneratePuppetMasterMetrics(cl2 *puppetdb.ClientMaster, host string, debug bool) {
