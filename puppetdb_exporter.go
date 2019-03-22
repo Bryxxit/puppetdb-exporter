@@ -455,7 +455,7 @@ func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, node
 			//factTotal.WithLabelValues(fact.Name+"."+path, value).Inc()
 
 			if nodes {
-				*arr = append(*arr, FactNodeGuageEntry{fact.Name + "." + path, fact.Environment, value, fact.CertName, 1})
+				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
 				//factNodeGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName, value).Set(1)
 			}
 		} else {
@@ -474,7 +474,7 @@ func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, node
 			//factTotal.WithLabelValues(fact.Name+"."+path, value).Inc()
 
 			if nodes {
-				*arr = append(*arr, FactNodeGuageEntry{fact.Name, fact.Environment, fact.CertName, value, 1})
+				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
 				//factNodeGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName, value).Set(1)
 			}
 
