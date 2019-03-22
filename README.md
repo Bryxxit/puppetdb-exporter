@@ -31,3 +31,6 @@ The config file is fairly short for now and is yaml based following parameters a
 - interval: The interval between collections defaults to 15 seconds
 - debug: Logs some stuff that is happening and what metrics ware found from puppetdb. This may result in a lot of log entries.
 - timeout: This is the time in seconds when an node should be considered unresponsive defaults to 3600
+- masterEnable Whether to gather puppet master metrics or not.
+- masterHost The puppet master ip/hostname if not set and master metrics enabled same as puppetdb will be used
+- MasterPort The puppet masters port defaults to 8140
