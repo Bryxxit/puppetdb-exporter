@@ -489,7 +489,7 @@ func setFactMetrics(factArr map[string]map[string]int, arrG [][]FactGuageEntry, 
 	factNodeGuage.Reset()
 	for key, _ := range factArr {
 		for key2, value2 := range factArr[key] {
-			factTotal.WithLabelValues(key2, key).Set(float64(value2))
+			factTotal.WithLabelValues(key, key2).Set(float64(value2))
 		}
 	}
 	for _, arr := range arrG {
