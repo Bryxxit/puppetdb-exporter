@@ -758,7 +758,7 @@ func main() {
 		c.Port = 8080
 	}
 	if c.MasterPort == 0 {
-		c.Port = 8140
+		c.MasterPort = 8140
 	}
 	if c.Timeout == 0 {
 		c.Timeout = 3600
