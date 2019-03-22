@@ -778,7 +778,16 @@ func main() {
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
 				}
-				if c.MasterEnable {
+				time.Sleep(i * time.Second)
+			}
+		}()
+		if c.MasterEnable {
+			go func() {
+				for {
+					i := time.Duration(15)
+					if c.Interval != 0 {
+						i = time.Duration(c.Interval)
+					}
 					cl2 := puppetdb.NewClientSSLMaster(c.MasterHost, c.MasterPort, c.Key, c.Cert, c.Ca, c.Debug)
 					_, err := cl2.Master()
 					if err != nil {
@@ -788,12 +797,10 @@ func main() {
 						GeneratePuppetMasterMetrics(cl2, c.MasterHost, false)
 
 					}
-
+					time.Sleep(i * time.Second)
 				}
-
-				time.Sleep(i * time.Second)
-			}
-		}()
+			}()
+		}
 
 	} else {
 		if c.Debug {
@@ -809,7 +816,17 @@ func main() {
 				if c.Interval != 0 {
 					i = time.Duration(c.Interval)
 				}
-				if c.MasterEnable {
+				time.Sleep(i * time.Second)
+			}
+		}()
+
+		if c.MasterEnable {
+			go func() {
+				for {
+					i := time.Duration(15)
+					if c.Interval != 0 {
+						i = time.Duration(c.Interval)
+					}
 					cl2 := puppetdb.NewClientSSLInsecureMaster(c.MasterHost, c.MasterPort, c.Debug)
 					_, err := cl2.Master()
 					if err != nil {
@@ -819,11 +836,10 @@ func main() {
 						GeneratePuppetMasterMetrics(cl2, c.MasterHost, false)
 
 					}
+					time.Sleep(i * time.Second)
 				}
-
-				time.Sleep(i * time.Second)
-			}
-		}()
+			}()
+		}
 
 	}
 	i := 15
