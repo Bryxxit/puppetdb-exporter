@@ -206,14 +206,6 @@ var masterFunction = prometheus.NewGaugeVec(
 	[]string{"master", "function", "type"},
 )
 
-//var masterFunctionTable = prometheus.NewGaugeVec(
-//	prometheus.GaugeOpts{
-//		Name: "puppet_master_profiler_function_table",
-//		Help: "Profiler function metrics for the puppet master",
-//	},
-//	[]string{"master", "function", "count", "mean", "aggregate"},
-//)
-
 var masterResource = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "puppet_master_profiler_resource_guage",
@@ -296,57 +288,33 @@ func getBaseMetric(fact string, c *puppetdb.Client) ([]puppetdb.FactJSON, error)
 	return facts, err
 }
 
-func evalMetric(facts []puppetdb.FactJSON, nodes bool) {
+func gatherMetrics(facts []puppetdb.FactJSON, path string, nodes bool, factArr *map[string]map[string]int, arrG *[][]FactGuageEntry, arrG2 *[][]FactNodeGuageEntry) {
+	arr := []FactGuageEntry{}
+	arr2 := []FactNodeGuageEntry{}
+	var value interface{}
 	if len(facts) > 0 {
-		value := facts[0].Value.Data()
+		if path != "" {
+			value = facts[0].Value.Path(path).Data()
+		} else {
+			value = facts[0].Value.Data()
+		}
 		check := reflect.TypeOf(value).String()
+
 		switch check {
 		case "int":
-			addGaugeMetricfactsIntOrFloat(facts)
+			addGaugeMetricfactsIntOrFloatPath2(facts, path, &arr)
+			*arrG = append(*arrG, arr)
 		case "string":
-			addGaugeMetricfactsString(facts, nodes)
+			addGaugeMetricfactsStringPath2(facts, path, nodes, &arr2, factArr)
+			*arrG2 = append(*arrG2, arr2)
 		case "float64":
-			addGaugeMetricfactsIntOrFloat(facts)
+			addGaugeMetricfactsIntOrFloatPath2(facts, path, &arr)
+			*arrG = append(*arrG, arr)
 		default:
 			fmt.Println("Skipping fact because not of type int, float or string")
 		}
 	}
 
-}
-
-func evalMetricPath(facts []puppetdb.FactJSON, path string, nodes bool) {
-	if len(facts) > 0 {
-		value := facts[0].Value.Path(path).Data()
-		check := reflect.TypeOf(value).String()
-		switch check {
-		case "int":
-			addGaugeMetricfactsIntOrFloatPath(facts, path)
-		case "string":
-			addGaugeMetricfactsStringPath(facts, path, nodes)
-		case "float64":
-			addGaugeMetricfactsIntOrFloatPath(facts, path)
-		default:
-			fmt.Println("Skipping fact because not of type int, float or string")
-		}
-	}
-
-}
-
-func addGaugeMetricfactsIntOrFloat(facts []puppetdb.FactJSON) {
-	for _, fact := range facts {
-		value := fact.Value.Data().(float64)
-		factGuage.WithLabelValues(fact.Name, fact.Environment, fact.CertName).Set(value)
-	}
-}
-
-func addGaugeMetricfactsString(facts []puppetdb.FactJSON, nodes bool) {
-	for _, fact := range facts {
-		value := fact.Value.Data().(string)
-		factTotal.WithLabelValues(fact.Name, value).Inc()
-		if nodes {
-			factNodeGuage.WithLabelValues(fact.Name, fact.Environment, fact.CertName, value).Set(1)
-		}
-	}
 }
 
 func addLastReportTimeMetric(node puppetdb.NodeJSON) {
@@ -437,21 +405,106 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 	}
 }
 
-func addGaugeMetricfactsIntOrFloatPath(facts []puppetdb.FactJSON, path string) {
+type FactGuageEntry struct {
+	Name        string
+	Environment string
+	CertName    string
+	Set         float64
+}
+
+type FactNodeGuageEntry struct {
+	Name        string
+	Environment string
+	Value       string
+	CertName    string
+	Set         float64
+}
+
+func addGaugeMetricfactsIntOrFloatPath2(facts []puppetdb.FactJSON, path string, arr *[]FactGuageEntry) {
+
 	for _, fact := range facts {
-		value := fact.Value.Path(path).Data().(float64)
-		factGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName).Set(value)
+		var value interface{}
+		if path != "" {
+			value = fact.Value.Path(path).Data()
+			*arr = append(*arr, FactGuageEntry{fact.Name + "." + path, fact.Environment, fact.CertName, value.(float64)})
+		} else {
+			value = fact.Value.Data()
+			*arr = append(*arr, FactGuageEntry{fact.Name, fact.Environment, fact.CertName, value.(float64)})
+
+		}
+
 	}
 }
 
-func addGaugeMetricfactsStringPath(facts []puppetdb.FactJSON, path string, nodes bool) {
+func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, nodes bool, arr *[]FactNodeGuageEntry, totalArr *map[string]map[string]int) {
 	for _, fact := range facts {
-		value := fact.Value.Path(path).Data().(string)
-		factTotal.WithLabelValues(fact.Name+"."+path, value).Inc()
-		if nodes {
-			factNodeGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName, value).Set(1)
+		var value string
+		if path != "" {
+			value = fact.Value.Path(path).Data().(string)
+			if _, ok := (*totalArr)[fact.Name+"."+path]; ok {
+				if _, ok := (*totalArr)[fact.Name+"."+path][value]; ok {
+					(*totalArr)[fact.Name+"."+path][value] = (*totalArr)[fact.Name+"."+path][value] + 1
+				} else {
+					(*totalArr)[fact.Name+"."+path][value] = 1
+				}
+			} else {
+				(*totalArr)[fact.Name+"."+path] = map[string]int{
+					value: 1,
+				}
+			}
+			//factTotal.WithLabelValues(fact.Name+"."+path, value).Inc()
+
+			if nodes {
+				*arr = append(*arr, FactNodeGuageEntry{fact.Name + "." + path, fact.Environment, fact.CertName, value, 1})
+				//factNodeGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName, value).Set(1)
+			}
+		} else {
+			value = fact.Value.Data().(string)
+			if _, ok := (*totalArr)[fact.Name]; ok {
+				if _, ok := (*totalArr)[fact.Name][value]; ok {
+					(*totalArr)[fact.Name][value] = (*totalArr)[fact.Name][value] + 1
+				} else {
+					(*totalArr)[fact.Name][value] = 1
+				}
+			} else {
+				(*totalArr)[fact.Name] = map[string]int{
+					value: 1,
+				}
+			}
+			//factTotal.WithLabelValues(fact.Name+"."+path, value).Inc()
+
+			if nodes {
+				*arr = append(*arr, FactNodeGuageEntry{fact.Name, fact.Environment, fact.CertName, value, 1})
+				//factNodeGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName, value).Set(1)
+			}
+
+		}
+
+	}
+}
+
+func setFactMetrics(factArr map[string]map[string]int, arrG [][]FactGuageEntry, arrG2 [][]FactNodeGuageEntry, nodes bool) {
+	factTotal.Reset()
+	factGuage.Reset()
+	factNodeGuage.Reset()
+	for key, _ := range factArr {
+		for key2, value2 := range factArr[key] {
+			statusTotal.WithLabelValues(key2, key).Set(float64(value2))
 		}
 	}
+	for _, arr := range arrG {
+		for _, nf := range arr {
+			factGuage.WithLabelValues(nf.Name, nf.Environment, nf.CertName).Set(nf.Set)
+		}
+	}
+	if nodes {
+		for _, arr := range arrG2 {
+			for _, nf := range arr {
+				factNodeGuage.WithLabelValues(nf.Name, nf.Environment, nf.CertName, nf.Value).Set(1)
+			}
+		}
+	}
+
 }
 
 type Conf struct {
@@ -489,25 +542,31 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug 
 	if debug {
 		log.Print("Resetting facts interfaces.")
 	}
-	factTotal.Reset()
-	factGuage.Reset()
-	factNodeGuage.Reset()
+	//t1 := time.Now()
 	if debug {
 		log.Print("Done resetting facts interfaces.")
 	}
+	// collect metrics
+	factArr := map[string]map[string]int{}
+	arrG := [][]FactGuageEntry{}
+	arrG2 := [][]FactNodeGuageEntry{}
 	for _, fact := range facts {
-		// TODO more fact debugging
 		fA := strings.Split(fact, ".")
 		if len(fA) == 1 {
 			facts2, _ := getBaseMetric(fA[0], c)
-			evalMetric(facts2, nodes)
+			gatherMetrics(facts2, "", nodes, &factArr, &arrG, &arrG2)
+
 		} else if len(fA) > 1 {
 			facts2, _ := getBaseMetric(fA[0], c)
 			pathA := append(fA[:0], fA[0+1:]...)
 			path := strings.Join(pathA, ".")
-			evalMetricPath(facts2, path, nodes)
+			gatherMetrics(facts2, path, nodes, &factArr, &arrG, &arrG2)
+
 		}
 	}
+
+	setFactMetrics(factArr, arrG, arrG2, nodes)
+
 }
 
 func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statusArr *map[string]map[string]int) {
