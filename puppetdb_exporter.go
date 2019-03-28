@@ -17,12 +17,81 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
+//  START MODELS AND VARIABLES
 var (
 	addr = flag.String("listen-address", ":8156", "The address to listen on for HTTP requests.")
 	conf = flag.String("conf", "puppetdb-facts.yaml", "The path to the config file.")
 	endP = flag.String("endpoint", "/metrics", "The path to display the metrics on default  /metrics")
 )
 
+// Conf the configuration file object for this exporter
+type Conf struct {
+	Facts        []string `yaml:"facts"`
+	Nodes        bool     `yaml:"nodes"`
+	Host         string   `yaml:"host"`
+	Port         int      `yaml:"port"`
+	MasterEnable bool     `yaml:"masterEnable"`
+	MasterHost   string   `yaml:"masterHost"`
+	MasterPort   int      `yaml:"masterPort"`
+	SSL          bool     `yaml:"ssl"`
+	Key          string   `yaml:"key"`
+	Ca           string   `yaml:"ca"`
+	Cert         string   `yaml:"cert"`
+	Interval     int      `yaml:"interval"`
+	Debug        bool     `yaml:"debug"`
+	Timeout      int      `yaml:"timeout"`
+}
+
+func (c *Conf) getConf(configFile string) *Conf {
+
+	yamlFile, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		log.Printf("yamlFile.Get err   #%v ", err)
+	}
+	err = yaml.Unmarshal(yamlFile, c)
+	if err != nil {
+		log.Fatalf("Unmarshal: %v", err)
+	}
+
+	return c
+}
+
+// FactGuageEntry Contains the information for one fact entry
+type FactGuageEntry struct {
+	Name        string
+	Environment string
+	CertName    string
+	Set         float64
+}
+
+// FactNodeGuageEntry Contains the information for one node fact entry
+type FactNodeGuageEntry struct {
+	Name        string
+	Environment string
+	Value       string
+	CertName    string
+	Set         float64
+}
+
+// ReportsMetricEntry Holds data for an entry in the reports metric api
+type ReportsMetricEntry struct {
+	Name        string
+	Environment string
+	Certname    string
+	Value       float64
+}
+
+// NodeStatusEntry Holds data for a nodes status
+type NodeStatusEntry struct {
+	Status      string
+	Value       string
+	Environment string
+	Certname    string
+}
+
+//  END MODELS AND VARIABLES
+
+//  START GUAGES
 var puppetDBGuage = prometheus.NewGauge(
 	prometheus.GaugeOpts{
 		Name: "puppetdb_connection_up",
@@ -238,56 +307,43 @@ var masterState = prometheus.NewGaugeVec(
 	[]string{"master", "service_version", "service_state", "detail_level"},
 )
 
-func init() {
-	// Register the summary and the histogram with Prometheus's default registry.
-	prometheus.MustRegister(factGuage)
-	prometheus.MustRegister(puppetDBGuage)
-	prometheus.MustRegister(factTotal)
-	prometheus.MustRegister(factNodeGuage)
-	prometheus.MustRegister(statusTotal)
-	prometheus.MustRegister(statusNodesGuage)
-	prometheus.MustRegister(resourcesNodeGuage)
-	prometheus.MustRegister(timeNodeGuage)
-	prometheus.MustRegister(eventNodeGuage)
-	prometheus.MustRegister(timeLastReportNodeGuage)
+// END GUAGES
 
-	prometheus.MustRegister(masterHttpGuage)
-	prometheus.MustRegister(masterHttpClientGuage)
+// START FACT GATHERING METHODS
 
-	prometheus.MustRegister(masterGCCount)
-	prometheus.MustRegister(masterGCDuration)
-	prometheus.MustRegister(masterGCTime)
-	prometheus.MustRegister(masterJVMGuage)
-	prometheus.MustRegister(masterMemoryGuage)
-	prometheus.MustRegister(masterFile)
-	prometheus.MustRegister(masterThread)
-
-	prometheus.MustRegister(masterRuby)
-	prometheus.MustRegister(masterBorrowedInstance)
-	prometheus.MustRegister(masterBorrowedInstanceDuration)
-
-	prometheus.MustRegister(masterResource)
-	prometheus.MustRegister(masterFunction)
-	//prometheus.MustRegister(masterFunctionTable)
-
-	prometheus.MustRegister(masterCatalog)
-	prometheus.MustRegister(masterPuppetdb)
-
-	prometheus.MustRegister(masterState)
-
-}
-
-func getBaseMetric(fact string, c *puppetdb.Client) ([]puppetdb.FactJSON, error) {
-	facts, err := c.FactPerNode(fact)
-	if err != nil {
-		log.Print(err)
-		puppetDBGuage.Set(0)
-	} else {
-		puppetDBGuage.Set(1)
+// GenerateFactsMetrics Scrapes the facts metrics defined in the yaml file and exports them to the prometheus exporter
+func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug bool) {
+	if debug {
+		log.Println("Resetting facts interfaces.")
 	}
-	return facts, err
+	//t1 := time.Now()
+	if debug {
+		log.Println("Done resetting facts interfaces.")
+	}
+	// collect metrics
+	factArr := map[string]map[string]int{}
+	arrG := [][]FactGuageEntry{}
+	arrG2 := [][]FactNodeGuageEntry{}
+	for _, fact := range facts {
+		fA := strings.Split(fact, ".")
+		if len(fA) == 1 {
+			facts2, _ := getBaseMetric(fA[0], c)
+			gatherMetrics(facts2, "", nodes, &factArr, &arrG, &arrG2)
+
+		} else if len(fA) > 1 {
+			facts2, _ := getBaseMetric(fA[0], c)
+			pathA := append(fA[:0], fA[0+1:]...)
+			path := strings.Join(pathA, ".")
+			gatherMetrics(facts2, path, nodes, &factArr, &arrG, &arrG2)
+
+		}
+	}
+
+	setFactMetrics(factArr, arrG, arrG2, nodes)
+
 }
 
+// gatherMetrics Scrapes the apis and returns the values
 func gatherMetrics(facts []puppetdb.FactJSON, path string, nodes bool, factArr *map[string]map[string]int, arrG *[][]FactGuageEntry, arrG2 *[][]FactNodeGuageEntry) {
 	arr := []FactGuageEntry{}
 	arr2 := []FactNodeGuageEntry{}
@@ -317,18 +373,212 @@ func gatherMetrics(facts []puppetdb.FactJSON, path string, nodes bool, factArr *
 
 }
 
-func addLastReportTimeMetric(node puppetdb.NodeJSON) {
-	layout := "2006-01-02T15:04:05.000Z"
-	t, err := time.Parse(layout, node.ReportTimestamp)
+// getBaseMetric Gets the fact for each of the given metric path(assuming correct path is given)
+func getBaseMetric(fact string, c *puppetdb.Client) ([]puppetdb.FactJSON, error) {
+	facts, err := c.FactPerNode(fact)
 	if err != nil {
-		log.Println(err.Error())
+		log.Println(err)
+		puppetDBGuage.Set(0)
+	} else {
+		puppetDBGuage.Set(1)
 	}
-	duration := time.Since(t).Seconds()
-	timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+	return facts, err
+}
+
+// addGaugeMetricfactsIntOrFloatPath2 If given metric was a float this will add a FactGaugeEntry to the array
+func addGaugeMetricfactsIntOrFloatPath2(facts []puppetdb.FactJSON, path string, arr *[]FactGuageEntry) {
+
+	for _, fact := range facts {
+		var value interface{}
+		if path != "" {
+			value = fact.Value.Path(path).Data()
+			*arr = append(*arr, FactGuageEntry{fact.Name + "." + path, fact.Environment, fact.CertName, value.(float64)})
+		} else {
+			value = fact.Value.Data()
+			*arr = append(*arr, FactGuageEntry{fact.Name, fact.Environment, fact.CertName, value.(float64)})
+
+		}
+
+	}
+}
+
+// addGaugeMetricfactsStringPath2 If given metric was a float this will add a FactNodeGaugeEntry to the array and a total fact entry
+func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, nodes bool, arr *[]FactNodeGuageEntry, totalArr *map[string]map[string]int) {
+	for _, fact := range facts {
+		var value string
+		if path != "" {
+			value = fact.Value.Path(path).Data().(string)
+			if _, ok := (*totalArr)[fact.Name+"."+path]; ok {
+				if _, ok := (*totalArr)[fact.Name+"."+path][value]; ok {
+					(*totalArr)[fact.Name+"."+path][value] = (*totalArr)[fact.Name+"."+path][value] + 1
+				} else {
+					(*totalArr)[fact.Name+"."+path][value] = 1
+				}
+			} else {
+				(*totalArr)[fact.Name+"."+path] = map[string]int{
+					value: 1,
+				}
+			}
+			if nodes {
+				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
+			}
+		} else {
+			value = fact.Value.Data().(string)
+			if _, ok := (*totalArr)[fact.Name]; ok {
+				if _, ok := (*totalArr)[fact.Name][value]; ok {
+					(*totalArr)[fact.Name][value] = (*totalArr)[fact.Name][value] + 1
+				} else {
+					(*totalArr)[fact.Name][value] = 1
+				}
+			} else {
+				(*totalArr)[fact.Name] = map[string]int{
+					value: 1,
+				}
+			}
+			if nodes {
+				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
+			}
+
+		}
+
+	}
+}
+
+// setFactMetrics Resets the gauges and exports the given metrics
+func setFactMetrics(factArr map[string]map[string]int, arrG [][]FactGuageEntry, arrG2 [][]FactNodeGuageEntry, nodes bool) {
+	factTotal.Reset()
+	factGuage.Reset()
+	factNodeGuage.Reset()
+	for key, _ := range factArr {
+		for key2, value2 := range factArr[key] {
+			factTotal.WithLabelValues(key, key2).Set(float64(value2))
+		}
+	}
+	for _, arr := range arrG {
+		for _, nf := range arr {
+			factGuage.WithLabelValues(nf.Name, nf.Environment, nf.CertName).Set(nf.Set)
+		}
+	}
+	if nodes {
+		for _, arr := range arrG2 {
+			for _, nf := range arr {
+				factNodeGuage.WithLabelValues(nf.Name, nf.Environment, nf.CertName, nf.Value).Set(1)
+			}
+		}
+	}
 
 }
 
-func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node puppetdb.NodeJSON, statusArr map[string]map[string]int) {
+// END FACT GATHERING METHODS
+
+// START REPORTS GATHERING METHODS
+
+// GenerateReportsMetrics Gathers puppetdb reports metrics and exports them to the exporter
+func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout int) {
+	if debug {
+		log.Println("Retrieving nodes.")
+	}
+	nodesArr, err := c.Nodes()
+
+	if err != nil {
+		log.Println(err)
+	}
+	if debug {
+		i := len(nodesArr)
+		log.Printf("Nodes collected found %d nodes", i)
+		log.Println("Ressting status and node metrics interfaces.")
+	}
+	// Reset nodes values
+
+	if debug {
+		log.Println("Done resetting the interfaces")
+
+	}
+
+	var statusArr map[string]map[string]int = map[string]map[string]int{}
+	var timeArr *[]ReportsMetricEntry = &[]ReportsMetricEntry{}
+	var eventArr *[]ReportsMetricEntry = &[]ReportsMetricEntry{}
+	var resourceArr *[]ReportsMetricEntry = &[]ReportsMetricEntry{}
+	var nodeStatusArr *[]NodeStatusEntry = &[]NodeStatusEntry{}
+
+	t1 := time.Now()
+	for _, node := range nodesArr {
+		// set the report time
+		if node.ReportTimestamp != "" {
+			// eval time
+			layout := "2006-01-02T15:04:05.000Z"
+			t, err := time.Parse(layout, node.ReportTimestamp)
+			if err != nil {
+				log.Println(err.Error())
+			}
+			duration := time.Since(t)
+			timeout := float64(timeout)
+			// if timeout reached we do not parse this node
+			if duration.Seconds() > timeout {
+				setState(node, nodes, debug, int(timeout), &statusArr, nodeStatusArr)
+
+				// if node is okay we parse it
+			} else {
+				res, err := c.ReportByHash(node.LatestReportHash)
+				if debug {
+					log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s latest report time is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus, node.ReportTimestamp)
+				}
+				addGaugeMetricStatusString(res, nodes, node, statusArr, timeArr, eventArr, resourceArr, nodeStatusArr)
+				if err != nil {
+					log.Println(err)
+				}
+
+			}
+		} else {
+			setState(node, nodes, debug, int(timeout), &statusArr, nodeStatusArr)
+		}
+
+	}
+	if debug {
+		t2 := time.Now()
+		diff := t2.Sub(t1)
+		log.Println("Retrieving metrics took: " + diff.String())
+		//fmt.Println(diff)
+	}
+
+	statusTotal.Reset()
+	for key, _ := range statusArr {
+		for key2, value2 := range statusArr[key] {
+			statusTotal.WithLabelValues(key2, key).Set(float64(value2))
+		}
+	}
+
+	resourcesNodeGuage.Reset()
+	t1 = time.Now()
+	for _, entry := range *resourceArr {
+		resourcesNodeGuage.WithLabelValues(entry.Name, entry.Environment, entry.Certname).Set(entry.Value)
+	}
+	if debug {
+		t2 := time.Now()
+		diff := t2.Sub(t1)
+		log.Println("Populating resource metrics took: " + diff.String())
+	}
+
+	eventNodeGuage.Reset()
+	for _, entry := range *timeArr {
+		eventNodeGuage.WithLabelValues(entry.Name, entry.Environment, entry.Certname).Set(entry.Value)
+
+	}
+	timeNodeGuage.Reset()
+	for _, entry := range *timeArr {
+		timeNodeGuage.WithLabelValues(entry.Name, entry.Environment, entry.Certname).Set(entry.Value)
+	}
+
+	statusNodesGuage.Reset()
+	for _, entry := range *nodeStatusArr {
+		statusNodesGuage.WithLabelValues(entry.Status, entry.Value, entry.Environment, entry.Certname).Inc()
+	}
+}
+
+// addGaugeMetricStatusString Fills in metrics for the reports and fills the status array
+func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node puppetdb.NodeJSON,
+	statusArr map[string]map[string]int, timeArr *[]ReportsMetricEntry, eventArr *[]ReportsMetricEntry, resourceArr *[]ReportsMetricEntry,
+	nodeStatusArr *[]NodeStatusEntry) {
 	for _, report := range reports {
 		failed := 0.0
 		cor_changes := 0.0
@@ -336,11 +586,14 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 
 		for _, metric := range report.Metrics.Data {
 			if metric.Category == "time" {
-				timeNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+				*timeArr = append(*timeArr, ReportsMetricEntry{metric.Name, report.Environment, report.CertName, metric.Value})
 			} else if metric.Category == "events" {
-				eventNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+				//eventNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+				*eventArr = append(*timeArr, ReportsMetricEntry{metric.Name, report.Environment, report.CertName, metric.Value})
 			} else if metric.Category == "resources" {
-				resourcesNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+				//resourcesNodeGuage.WithLabelValues(metric.Name, report.Environment, report.CertName).Set(metric.Value)
+				*resourceArr = append(*timeArr, ReportsMetricEntry{metric.Name, report.Environment, report.CertName, metric.Value})
+
 				if metric.Name == "failed" {
 					failed = metric.Value
 				}
@@ -385,191 +638,31 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 
 		if nodes {
 			if node.LatestReportStatus == "unchanged" {
-				statusNodesGuage.WithLabelValues(report.Status, "1", report.Environment, report.CertName).Inc()
+				//statusNodesGuage.WithLabelValues(report.Status, "1", report.Environment, report.CertName).Inc()
+				*nodeStatusArr = append(*nodeStatusArr, NodeStatusEntry{report.Status, "1", report.Environment, report.CertName})
 			}
 			if node.LatestReportStatus == "failed" {
 				value := strconv.Itoa(int(failed))
-				statusNodesGuage.WithLabelValues(report.Status, value, report.Environment, report.CertName).Inc()
+				*nodeStatusArr = append(*nodeStatusArr, NodeStatusEntry{report.Status, value, report.Environment, report.CertName})
+				//statusNodesGuage.WithLabelValues(report.Status, value, report.Environment, report.CertName).Inc()
 			}
 			if node.LatestReportStatus == "changed" {
 				if cor_changes > 0 {
 					value := strconv.Itoa(int(cor_changes))
-					statusNodesGuage.WithLabelValues("corrective_change", value, report.Environment, report.CertName).Inc()
+					*nodeStatusArr = append(*nodeStatusArr, NodeStatusEntry{"corrective_change", value, report.Environment, report.CertName})
+					//statusNodesGuage.WithLabelValues("corrective_change", value, report.Environment, report.CertName).Inc()
 				}
 				if changes > 0 {
 					value := strconv.Itoa(int(changes))
-					statusNodesGuage.WithLabelValues("changed", value, report.Environment, report.CertName).Inc()
+					*nodeStatusArr = append(*nodeStatusArr, NodeStatusEntry{"changed", value, report.Environment, report.CertName})
+					//statusNodesGuage.WithLabelValues("changed", value, report.Environment, report.CertName).Inc()
 				}
 			}
 		}
 	}
 }
 
-type FactGuageEntry struct {
-	Name        string
-	Environment string
-	CertName    string
-	Set         float64
-}
-
-type FactNodeGuageEntry struct {
-	Name        string
-	Environment string
-	Value       string
-	CertName    string
-	Set         float64
-}
-
-func addGaugeMetricfactsIntOrFloatPath2(facts []puppetdb.FactJSON, path string, arr *[]FactGuageEntry) {
-
-	for _, fact := range facts {
-		var value interface{}
-		if path != "" {
-			value = fact.Value.Path(path).Data()
-			*arr = append(*arr, FactGuageEntry{fact.Name + "." + path, fact.Environment, fact.CertName, value.(float64)})
-		} else {
-			value = fact.Value.Data()
-			*arr = append(*arr, FactGuageEntry{fact.Name, fact.Environment, fact.CertName, value.(float64)})
-
-		}
-
-	}
-}
-
-func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, nodes bool, arr *[]FactNodeGuageEntry, totalArr *map[string]map[string]int) {
-	for _, fact := range facts {
-		var value string
-		if path != "" {
-			value = fact.Value.Path(path).Data().(string)
-			if _, ok := (*totalArr)[fact.Name+"."+path]; ok {
-				if _, ok := (*totalArr)[fact.Name+"."+path][value]; ok {
-					(*totalArr)[fact.Name+"."+path][value] = (*totalArr)[fact.Name+"."+path][value] + 1
-				} else {
-					(*totalArr)[fact.Name+"."+path][value] = 1
-				}
-			} else {
-				(*totalArr)[fact.Name+"."+path] = map[string]int{
-					value: 1,
-				}
-			}
-			//factTotal.WithLabelValues(fact.Name+"."+path, value).Inc()
-
-			if nodes {
-				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
-				//factNodeGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName, value).Set(1)
-			}
-		} else {
-			value = fact.Value.Data().(string)
-			if _, ok := (*totalArr)[fact.Name]; ok {
-				if _, ok := (*totalArr)[fact.Name][value]; ok {
-					(*totalArr)[fact.Name][value] = (*totalArr)[fact.Name][value] + 1
-				} else {
-					(*totalArr)[fact.Name][value] = 1
-				}
-			} else {
-				(*totalArr)[fact.Name] = map[string]int{
-					value: 1,
-				}
-			}
-			//factTotal.WithLabelValues(fact.Name+"."+path, value).Inc()
-
-			if nodes {
-				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
-				//factNodeGuage.WithLabelValues(fact.Name+"."+path, fact.Environment, fact.CertName, value).Set(1)
-			}
-
-		}
-
-	}
-}
-
-func setFactMetrics(factArr map[string]map[string]int, arrG [][]FactGuageEntry, arrG2 [][]FactNodeGuageEntry, nodes bool) {
-	factTotal.Reset()
-	factGuage.Reset()
-	factNodeGuage.Reset()
-	for key, _ := range factArr {
-		for key2, value2 := range factArr[key] {
-			factTotal.WithLabelValues(key, key2).Set(float64(value2))
-		}
-	}
-	for _, arr := range arrG {
-		for _, nf := range arr {
-			factGuage.WithLabelValues(nf.Name, nf.Environment, nf.CertName).Set(nf.Set)
-		}
-	}
-	if nodes {
-		for _, arr := range arrG2 {
-			for _, nf := range arr {
-				factNodeGuage.WithLabelValues(nf.Name, nf.Environment, nf.CertName, nf.Value).Set(1)
-			}
-		}
-	}
-
-}
-
-type Conf struct {
-	Facts        []string `yaml:"facts"`
-	Nodes        bool     `yaml:"nodes"`
-	Host         string   `yaml:"host"`
-	Port         int      `yaml:"port"`
-	MasterEnable bool     `yaml:"masterEnable"`
-	MasterHost   string   `yaml:"masterHost"`
-	MasterPort   int      `yaml:"masterPort"`
-	SSL          bool     `yaml:"ssl"`
-	Key          string   `yaml:"key"`
-	Ca           string   `yaml:"ca"`
-	Cert         string   `yaml:"cert"`
-	Interval     int      `yaml:"interval"`
-	Debug        bool     `yaml:"debug"`
-	Timeout      int      `yaml:"timeout"`
-}
-
-func (c *Conf) getConf(configFile string) *Conf {
-
-	yamlFile, err := ioutil.ReadFile(configFile)
-	if err != nil {
-		log.Printf("yamlFile.Get err   #%v ", err)
-	}
-	err = yaml.Unmarshal(yamlFile, c)
-	if err != nil {
-		log.Fatalf("Unmarshal: %v", err)
-	}
-
-	return c
-}
-
-func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug bool) {
-	if debug {
-		log.Print("Resetting facts interfaces.")
-	}
-	//t1 := time.Now()
-	if debug {
-		log.Print("Done resetting facts interfaces.")
-	}
-	// collect metrics
-	factArr := map[string]map[string]int{}
-	arrG := [][]FactGuageEntry{}
-	arrG2 := [][]FactNodeGuageEntry{}
-	for _, fact := range facts {
-		fA := strings.Split(fact, ".")
-		if len(fA) == 1 {
-			facts2, _ := getBaseMetric(fA[0], c)
-			gatherMetrics(facts2, "", nodes, &factArr, &arrG, &arrG2)
-
-		} else if len(fA) > 1 {
-			facts2, _ := getBaseMetric(fA[0], c)
-			pathA := append(fA[:0], fA[0+1:]...)
-			path := strings.Join(pathA, ".")
-			gatherMetrics(facts2, path, nodes, &factArr, &arrG, &arrG2)
-
-		}
-	}
-
-	setFactMetrics(factArr, arrG, arrG2, nodes)
-
-}
-
-func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statusArr *map[string]map[string]int) {
+func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statusArr *map[string]map[string]int, nodeStatusArr *[]NodeStatusEntry) {
 	if node.ReportTimestamp != "" {
 		addLastReportTimeMetric(node)
 		// eval time
@@ -587,18 +680,31 @@ func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statu
 			timeoutString := strconv.Itoa(int(duration.Seconds()))
 
 			if nodes {
-				statusNodesGuage.WithLabelValues("unresponsive", timeoutString, node.ReportEnvironment, node.Certname).Inc()
+				*nodeStatusArr = append(*nodeStatusArr, NodeStatusEntry{"unresponsive", timeoutString, node.ReportEnvironment, node.Certname})
+				//statusNodesGuage.WithLabelValues("unresponsive", timeoutString, node.ReportEnvironment, node.Certname).Inc()
 			}
 			setStateInarray(node, "unresponsive", statusArr)
 
 		}
 	} else {
 		if nodes {
-			statusNodesGuage.WithLabelValues("unreported", "", node.ReportEnvironment, node.Certname).Inc()
+			*nodeStatusArr = append(*nodeStatusArr, NodeStatusEntry{"unreported", "", node.ReportEnvironment, node.Certname})
+			//statusNodesGuage.WithLabelValues("unreported", "", node.ReportEnvironment, node.Certname).Inc()
 		}
 		setStateInarray(node, "unreported", statusArr)
 
 	}
+}
+
+func addLastReportTimeMetric(node puppetdb.NodeJSON) {
+	layout := "2006-01-02T15:04:05.000Z"
+	t, err := time.Parse(layout, node.ReportTimestamp)
+	if err != nil {
+		log.Println(err.Error())
+	}
+	duration := time.Since(t).Seconds()
+	timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+
 }
 
 func setStateInarray(node puppetdb.NodeJSON, state string, statusArr *map[string]map[string]int) {
@@ -626,71 +732,11 @@ func setStateInarray(node puppetdb.NodeJSON, state string, statusArr *map[string
 	}
 }
 
-func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout int) {
-	if debug {
-		log.Print("Retrieving nodes.")
-	}
-	nodesArr, err := c.Nodes()
+// END REPORTS GATHERING METHODS
 
-	if err != nil {
-		log.Print(err)
-	}
-	if debug {
-		i := len(nodesArr)
-		log.Printf("Nodes collected found %d nodes", i)
-		log.Print("Ressting status and node metrics interfaces.")
-	}
-	// Reset nodes values
-	statusNodesGuage.Reset()
-	resourcesNodeGuage.Reset()
-	timeNodeGuage.Reset()
-	eventNodeGuage.Reset()
-	if debug {
-		log.Print("Done resetting the interfaces")
-	}
+// START PUPPETMASTER METRICS
 
-	var statusArr map[string]map[string]int = map[string]map[string]int{}
-
-	for _, node := range nodesArr {
-		// set the report time
-		if node.ReportTimestamp != "" {
-			// eval time
-			layout := "2006-01-02T15:04:05.000Z"
-			t, err := time.Parse(layout, node.ReportTimestamp)
-			if err != nil {
-				log.Println(err.Error())
-			}
-			duration := time.Since(t)
-			timeout := float64(timeout)
-			// if timeout reached we do not parse this node
-			if duration.Seconds() > timeout {
-				setState(node, nodes, debug, int(timeout), &statusArr)
-
-				// if node is okay we parse it
-			} else {
-				res, err := c.ReportByHash(node.LatestReportHash)
-				if debug {
-					log.Printf("Retrieving report for node: %s  of environment: %s latest report hash is: %s latest report status is %s latest report time is %s", node.Certname, node.ReportEnvironment, node.LatestReportHash, node.LatestReportStatus, node.ReportTimestamp)
-				}
-				addGaugeMetricStatusString(res, nodes, node, statusArr)
-				if err != nil {
-					log.Print(err)
-				}
-
-			}
-		} else {
-			setState(node, nodes, debug, int(timeout), &statusArr)
-		}
-
-	}
-	statusTotal.Reset()
-	for key, _ := range statusArr {
-		for key2, value2 := range statusArr[key] {
-			statusTotal.WithLabelValues(key2, key).Set(float64(value2))
-		}
-	}
-}
-
+// GeneratePuppetMasterMetrics Scrapes and exports the metrics found on the puppet master services endpoint
 func GeneratePuppetMasterMetrics(cl2 *puppetdb.ClientMaster, host string, debug bool) {
 	m, err := cl2.Master()
 	if err != nil {
@@ -841,6 +887,48 @@ func generateProfileMetrics(p *puppetdb.Profiler, host string, debug bool) {
 	}
 }
 
+// STOP PUPPETMASTER METRICS
+
+// INIT AND MAIN
+func init() {
+	// Register the summary and the histogram with Prometheus's default registry.
+	prometheus.MustRegister(factGuage)
+	prometheus.MustRegister(puppetDBGuage)
+	prometheus.MustRegister(factTotal)
+	prometheus.MustRegister(factNodeGuage)
+	prometheus.MustRegister(statusTotal)
+	prometheus.MustRegister(statusNodesGuage)
+	prometheus.MustRegister(resourcesNodeGuage)
+	prometheus.MustRegister(timeNodeGuage)
+	prometheus.MustRegister(eventNodeGuage)
+	prometheus.MustRegister(timeLastReportNodeGuage)
+
+	prometheus.MustRegister(masterHttpGuage)
+	prometheus.MustRegister(masterHttpClientGuage)
+
+	prometheus.MustRegister(masterGCCount)
+	prometheus.MustRegister(masterGCDuration)
+	prometheus.MustRegister(masterGCTime)
+	prometheus.MustRegister(masterJVMGuage)
+	prometheus.MustRegister(masterMemoryGuage)
+	prometheus.MustRegister(masterFile)
+	prometheus.MustRegister(masterThread)
+
+	prometheus.MustRegister(masterRuby)
+	prometheus.MustRegister(masterBorrowedInstance)
+	prometheus.MustRegister(masterBorrowedInstanceDuration)
+
+	prometheus.MustRegister(masterResource)
+	prometheus.MustRegister(masterFunction)
+	//prometheus.MustRegister(masterFunctionTable)
+
+	prometheus.MustRegister(masterCatalog)
+	prometheus.MustRegister(masterPuppetdb)
+
+	prometheus.MustRegister(masterState)
+
+}
+
 func main() {
 	flag.Parse()
 
@@ -865,7 +953,7 @@ func main() {
 	//c.Debug = true
 	if c.SSL {
 		if c.Debug {
-			log.Print("SSL was configured continuing with ssl settings on https.")
+			log.Println("SSL was configured continuing with ssl settings on https.")
 		}
 		go func() {
 			for {
@@ -905,7 +993,7 @@ func main() {
 
 	} else {
 		if c.Debug {
-			log.Print("SSL was not configured continuing with http.")
+			log.Println("SSL was not configured continuing with http.")
 
 		}
 		go func() {
@@ -966,3 +1054,5 @@ func main() {
 	})
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
+
+// END INIT AND MAIN
