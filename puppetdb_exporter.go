@@ -171,7 +171,7 @@ var timeLastReportNodeGuage = prometheus.NewGaugeVec(
 	[]string{"puppet_environment", "node"},
 )
 
-var masterHttpGuage = prometheus.NewGaugeVec(
+var masterHTTPGuage = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "puppet_master_http_guage",
 		Help: "Http stats for the master",
@@ -179,7 +179,7 @@ var masterHttpGuage = prometheus.NewGaugeVec(
 	[]string{"master", "route", "type"},
 )
 
-var masterHttpClientGuage = prometheus.NewGaugeVec(
+var masterHTTPClientGuage = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "puppet_master_http_client_guage",
 		Help: "Http client stats for the master",
@@ -449,7 +449,7 @@ func setFactMetrics(factArr map[string]map[string]int, arrG [][]FactGuageEntry, 
 	factTotal.Reset()
 	factGuage.Reset()
 	factNodeGuage.Reset()
-	for key, _ := range factArr {
+	for key := range factArr {
 		for key2, value2 := range factArr[key] {
 			factTotal.WithLabelValues(key, key2).Set(float64(value2))
 		}
@@ -542,7 +542,7 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 	}
 
 	statusTotal.Reset()
-	for key, _ := range statusArr {
+	for key := range statusArr {
 		for key2, value2 := range statusArr[key] {
 			statusTotal.WithLabelValues(key2, key).Set(float64(value2))
 		}
@@ -581,7 +581,7 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 	nodeStatusArr *[]NodeStatusEntry) {
 	for _, report := range reports {
 		failed := 0.0
-		cor_changes := 0.0
+		corChanges := 0.0
 		changes := 0.0
 
 		for _, metric := range report.Metrics.Data {
@@ -601,14 +601,14 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 					changes = metric.Value
 				}
 				if metric.Name == "corrective_change" {
-					cor_changes = metric.Value
+					corChanges = metric.Value
 				}
 			}
 		}
 
 		stat := node.LatestReportStatus
 		if stat == "changed" {
-			if cor_changes > 0.0 {
+			if corChanges > 0.0 {
 				stat = "corrective_changes"
 			}
 		}
@@ -647,8 +647,8 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 				//statusNodesGuage.WithLabelValues(report.Status, value, report.Environment, report.CertName).Inc()
 			}
 			if node.LatestReportStatus == "changed" {
-				if cor_changes > 0 {
-					value := strconv.Itoa(int(cor_changes))
+				if corChanges > 0 {
+					value := strconv.Itoa(int(corChanges))
 					*nodeStatusArr = append(*nodeStatusArr, NodeStatusEntry{"corrective_change", value, report.Environment, report.CertName})
 					//statusNodesGuage.WithLabelValues("corrective_change", value, report.Environment, report.CertName).Inc()
 				}
@@ -675,7 +675,7 @@ func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statu
 		timeout2 := float64(timeout)
 		if duration.Seconds() > timeout2 {
 			if debug {
-				log.Printf("Node % has reached the timeout and is in unresponsive state latest report was %s", node.Certname, node.ReportTimestamp)
+				log.Printf("Node %s has reached the timeout and is in unresponsive state latest report was %s", node.Certname, node.ReportTimestamp)
 			}
 			timeoutString := strconv.Itoa(int(duration.Seconds()))
 
@@ -697,13 +697,15 @@ func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statu
 }
 
 func addLastReportTimeMetric(node puppetdb.NodeJSON) {
-	layout := "2006-01-02T15:04:05.000Z"
-	t, err := time.Parse(layout, node.ReportTimestamp)
-	if err != nil {
-		log.Println(err.Error())
+	if node.ReportTimestamp != "" {
+		layout := "2006-01-02T15:04:05.000Z"
+		t, err := time.Parse(layout, node.ReportTimestamp)
+		if err != nil {
+			log.Println(err.Error())
+		}
+		duration := time.Since(t).Seconds()
+		timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
 	}
-	duration := time.Since(t).Seconds()
-	timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
 
 }
 
@@ -742,7 +744,7 @@ func GeneratePuppetMasterMetrics(cl2 *puppetdb.ClientMaster, host string, debug 
 	if err != nil {
 		log.Println(err.Error())
 	} else {
-		generateHttpMetrics(&m, host, debug)
+		generateHTTPMetrics(&m, host, debug)
 		masterState.WithLabelValues(host, m.Version, m.State, m.DetailLevel).Set(1)
 	}
 
@@ -766,17 +768,17 @@ func GeneratePuppetMasterMetrics(cl2 *puppetdb.ClientMaster, host string, debug 
 	}
 }
 
-func generateHttpMetrics(master *puppetdb.MasterMetrics, host string, debug bool) {
+func generateHTTPMetrics(master *puppetdb.MasterMetrics, host string, debug bool) {
 	for _, metric := range *master.Status.Experimental.HttpMetrics {
-		masterHttpGuage.WithLabelValues(host, metric.RouteId, "aggregate").Set(float64(metric.Aggregate))
-		masterHttpGuage.WithLabelValues(host, metric.RouteId, "count").Set(float64(metric.Count))
-		masterHttpGuage.WithLabelValues(host, metric.RouteId, "mean").Set(float64(metric.Mean))
+		masterHTTPGuage.WithLabelValues(host, metric.RouteId, "aggregate").Set(float64(metric.Aggregate))
+		masterHTTPGuage.WithLabelValues(host, metric.RouteId, "count").Set(float64(metric.Count))
+		masterHTTPGuage.WithLabelValues(host, metric.RouteId, "mean").Set(float64(metric.Mean))
 	}
 
 	for _, metric := range *master.Status.Experimental.HttpClientMetrics {
-		masterHttpClientGuage.WithLabelValues(host, metric.MetricName, "aggregate", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Aggregate))
-		masterHttpClientGuage.WithLabelValues(host, metric.MetricName, "count", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Count))
-		masterHttpClientGuage.WithLabelValues(host, metric.MetricName, "mean", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Mean))
+		masterHTTPClientGuage.WithLabelValues(host, metric.MetricName, "aggregate", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Aggregate))
+		masterHTTPClientGuage.WithLabelValues(host, metric.MetricName, "count", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Count))
+		masterHTTPClientGuage.WithLabelValues(host, metric.MetricName, "mean", strings.Join(*metric.MetricId, ",")).Set(float64(metric.Mean))
 
 	}
 }
@@ -903,8 +905,8 @@ func init() {
 	prometheus.MustRegister(eventNodeGuage)
 	prometheus.MustRegister(timeLastReportNodeGuage)
 
-	prometheus.MustRegister(masterHttpGuage)
-	prometheus.MustRegister(masterHttpClientGuage)
+	prometheus.MustRegister(masterHTTPGuage)
+	prometheus.MustRegister(masterHTTPClientGuage)
 
 	prometheus.MustRegister(masterGCCount)
 	prometheus.MustRegister(masterGCDuration)
