@@ -504,6 +504,7 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 	t1 := time.Now()
 	for _, node := range nodesArr {
 		// set the report time
+		addLastReportTimeMetric(node)
 		if node.ReportTimestamp != "" {
 			// eval time
 			layout := "2006-01-02T15:04:05.000Z"
@@ -664,7 +665,6 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 
 func setState(node puppetdb.NodeJSON, nodes bool, debug bool, timeout int, statusArr *map[string]map[string]int, nodeStatusArr *[]NodeStatusEntry) {
 	if node.ReportTimestamp != "" {
-		addLastReportTimeMetric(node)
 		// eval time
 		layout := "2006-01-02T15:04:05.000Z"
 		t, err := time.Parse(layout, node.ReportTimestamp)
