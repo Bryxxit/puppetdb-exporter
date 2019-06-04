@@ -3,18 +3,20 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/Jeffail/gabs"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	puppetdb "github.com/negast/go-puppetdb"
+	"github.com/negast/go-puppetdb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 //  START MODELS AND VARIABLES
@@ -326,21 +328,121 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug 
 	arrG2 := [][]FactNodeGuageEntry{}
 	for _, fact := range facts {
 		fA := strings.Split(fact, ".")
-		if len(fA) == 1 {
-			facts2, _ := getBaseMetric(fA[0], c)
-			gatherMetrics(facts2, "", nodes, &factArr, &arrG, &arrG2)
 
-		} else if len(fA) > 1 {
-			facts2, _ := getBaseMetric(fA[0], c)
-			pathA := append(fA[:0], fA[0+1:]...)
-			path := strings.Join(pathA, ".")
-			gatherMetrics(facts2, path, nodes, &factArr, &arrG, &arrG2)
+		if strings.Contains(fact, "*") {
+			wildCardMetric(fact, c, nodes, &factArr, &arrG, &arrG2)
+		} else {
+			if len(fA) == 1 {
+				facts2, _ := getBaseMetric(fA[0], c)
+				gatherMetrics(facts2, "", nodes, &factArr, &arrG, &arrG2)
 
+			} else if len(fA) > 1 {
+				facts2, _ := getBaseMetric(fA[0], c)
+				pathA := append(fA[:0], fA[0+1:]...)
+				path := strings.Join(pathA, ".")
+				gatherMetrics(facts2, path, nodes, &factArr, &arrG, &arrG2)
+
+			}
 		}
+
 	}
 
 	setFactMetrics(factArr, arrG, arrG2, nodes)
 
+}
+
+func wildCardMetric(factStr string, c *puppetdb.Client, nodes bool, factArr *map[string]map[string]int, arrG *[][]FactGuageEntry, arrG2 *[][]FactNodeGuageEntry) {
+	pathBase := strings.Split(factStr, ".")
+	facts, _ := c.FactPerNode(pathBase[0])
+	for _, fact := range facts {
+		getAllPathsForFact(*fact.Value, pathBase[0], factStr, fact, nodes, factArr, arrG, arrG2)
+	}
+}
+
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
+
+func getAllPathsForFact(fact gabs.Container, path string, regex string, factEntry puppetdb.FactJSON, nodes bool,
+	totalArr *map[string]map[string]int, arrG *[][]FactGuageEntry, arrG2 *[][]FactNodeGuageEntry) {
+	cont, _ := fact.ChildrenMap()
+	for key, val := range cont {
+		check := reflect.TypeOf(val.Data()).String()
+		//println(path, check)
+		if check == "string" {
+			match, _ := regexp.MatchString(regex, path+"."+key)
+			if match {
+				// adding stuff
+
+				//value := factEntry.Value.Data().(string)
+				if _, ok := (*totalArr)[path+"."+key]; ok {
+					if _, ok := (*totalArr)[path+"."+key][val.Data().(string)]; ok {
+						(*totalArr)[path+"."+key][val.Data().(string)] = (*totalArr)[path+"."+key][val.Data().(string)] + 1
+					} else {
+						(*totalArr)[path+"."+key][val.Data().(string)] = 1
+					}
+				} else {
+					(*totalArr)[path+"."+key] = map[string]int{
+						val.Data().(string): 1,
+					}
+				}
+				if nodes {
+					ae := FactNodeGuageEntry{Name: path + "." + key, Environment: factEntry.Environment,
+						Value: val.Data().(string), CertName: factEntry.CertName, Set: 1}
+					aeA := []FactNodeGuageEntry{ae}
+					*arrG2 = append(*arrG2, aeA)
+				}
+
+			}
+		} else if check == "float64" {
+			match, _ := regexp.MatchString(regex, path+"."+key)
+			if match {
+				// adding stuff
+				nd := FactGuageEntry{path + "." + key, factEntry.Environment,
+					factEntry.CertName, val.Data().(float64)}
+				aeA := []FactGuageEntry{nd}
+				*arrG = append(*arrG, aeA)
+			}
+		} else if check == "int" {
+			match, _ := regexp.MatchString(regex, path+"."+key)
+			if match {
+				// adding stuff
+				nd := FactGuageEntry{path + "." + key, factEntry.Environment,
+					factEntry.CertName, val.Data().(float64)}
+				aeA := []FactGuageEntry{nd}
+				*arrG = append(*arrG, aeA)
+			}
+		} else if check == "map[string]interface {}" {
+			getAllPathsForFact(*val, path+"."+key, regex, factEntry, nodes, totalArr, arrG, arrG2)
+		} else if check == "[]interface {}" {
+			arr, _ := val.Children()
+			for index, val2 := range arr {
+				str1 := fmt.Sprintf("%s.%s[%d]", path, key, index)
+				getAllPathsForFact(*val2, str1, regex, factEntry, nodes, totalArr, arrG, arrG2)
+			}
+		}
+	}
+}
+
+func evalPath(fact puppetdb.FactJSON, path string, first bool) {
+	factN := fact.Value.S(path)
+	if first {
+		factN = fact.Value
+	}
+	if factN != nil {
+		check := reflect.TypeOf(factN.Data()).String()
+		//println(path, check)
+		if check == "string" {
+			println(path + ": " + factN.String())
+		} else if check == "float64" {
+			println(path + ": " + factN.String())
+		}
+	}
 }
 
 // gatherMetrics Scrapes the apis and returns the values

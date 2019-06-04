@@ -11,7 +11,11 @@ It will also gather information about the status of your Puppet infrastructure (
 ```
 > git clone https://github.com/Bryxxit/puppetdb-exporter.git
 > cd puppetdb-exporter
+> go build
 ```
+Alternatively you can download the latest release here
+https://github.com/Bryxxit/puppetdb-exporter/releases
+
 * run `./puppetdb_exporter` to start the exporter service
 
 # Puppet exporter
@@ -31,6 +35,7 @@ facts:
   - 'uptime_seconds'
   - 'os.family'
   - 'operatingsystemrelease'
+  - 'networking.*'
 nodes: true
 debug: true
 masterEnable: true
