@@ -960,35 +960,38 @@ func generateJrubyMetrics(r *puppetdb.JrubyMetrics, host string, debug bool) {
 func generateProfileMetrics(p *puppetdb.Profiler, host string, debug bool) {
 	// prometheus.MustRegister(masterResource)
 	//masterResource.Reset()
-	for _, metric := range *p.Status.Experimental.ResourceMetrics {
-		masterResource.WithLabelValues(host, metric.Resource, "count").Set(float64(metric.Count))
-		masterResource.WithLabelValues(host, metric.Resource, "mean").Set(float64(metric.Mean))
-		masterResource.WithLabelValues(host, metric.Resource, "aggregate").Set(float64(metric.Aggregate))
+	if p != nil && p.Status != nil && p.Status.Experimental != nil {
+		for _, metric := range *p.Status.Experimental.ResourceMetrics {
+			masterResource.WithLabelValues(host, metric.Resource, "count").Set(float64(metric.Count))
+			masterResource.WithLabelValues(host, metric.Resource, "mean").Set(float64(metric.Mean))
+			masterResource.WithLabelValues(host, metric.Resource, "aggregate").Set(float64(metric.Aggregate))
 
-	}
-	//prometheus.MustRegister(masterFunction)
-	//masterFunctionTable.Reset()
-	for _, metric := range *p.Status.Experimental.FunctionMetrics {
-		masterFunction.WithLabelValues(host, metric.Function, "count").Set(float64(metric.Count))
-		masterFunction.WithLabelValues(host, metric.Function, "mean").Set(float64(metric.Mean))
-		masterFunction.WithLabelValues(host, metric.Function, "aggregate").Set(float64(metric.Aggregate))
-		//masterFunctionTable.WithLabelValues(host, metric.Function, strconv.Itoa(metric.Count),
-		//	strconv.Itoa(metric.Mean), strconv.Itoa(metric.Aggregate)).Set(1)
-	}
-	//prometheus.MustRegister(masterCatalog)
-	for _, metric := range *p.Status.Experimental.CatalogMetrics {
-		masterCatalog.WithLabelValues(host, metric.Metric, "count").Set(float64(metric.Count))
-		masterCatalog.WithLabelValues(host, metric.Metric, "mean").Set(float64(metric.Mean))
-		masterCatalog.WithLabelValues(host, metric.Metric, "aggregate").Set(float64(metric.Aggregate))
+		}
+		//prometheus.MustRegister(masterFunction)
+		//masterFunctionTable.Reset()
+		for _, metric := range *p.Status.Experimental.FunctionMetrics {
+			masterFunction.WithLabelValues(host, metric.Function, "count").Set(float64(metric.Count))
+			masterFunction.WithLabelValues(host, metric.Function, "mean").Set(float64(metric.Mean))
+			masterFunction.WithLabelValues(host, metric.Function, "aggregate").Set(float64(metric.Aggregate))
+			//masterFunctionTable.WithLabelValues(host, metric.Function, strconv.Itoa(metric.Count),
+			//	strconv.Itoa(metric.Mean), strconv.Itoa(metric.Aggregate)).Set(1)
+		}
+		//prometheus.MustRegister(masterCatalog)
+		for _, metric := range *p.Status.Experimental.CatalogMetrics {
+			masterCatalog.WithLabelValues(host, metric.Metric, "count").Set(float64(metric.Count))
+			masterCatalog.WithLabelValues(host, metric.Metric, "mean").Set(float64(metric.Mean))
+			masterCatalog.WithLabelValues(host, metric.Metric, "aggregate").Set(float64(metric.Aggregate))
 
-	}
-	//prometheus.MustRegister(masterPuppetdb)
-	for _, metric := range *p.Status.Experimental.PuppetdbMetrics {
-		masterPuppetdb.WithLabelValues(host, metric.Metric, "count").Set(float64(metric.Count))
-		masterPuppetdb.WithLabelValues(host, metric.Metric, "mean").Set(float64(metric.Mean))
-		masterPuppetdb.WithLabelValues(host, metric.Metric, "aggregate").Set(float64(metric.Aggregate))
+		}
+		//prometheus.MustRegister(masterPuppetdb)
+		for _, metric := range *p.Status.Experimental.PuppetdbMetrics {
+			masterPuppetdb.WithLabelValues(host, metric.Metric, "count").Set(float64(metric.Count))
+			masterPuppetdb.WithLabelValues(host, metric.Metric, "mean").Set(float64(metric.Mean))
+			masterPuppetdb.WithLabelValues(host, metric.Metric, "aggregate").Set(float64(metric.Aggregate))
 
+		}
 	}
+
 }
 
 // STOP PUPPETMASTER METRICS
@@ -1084,7 +1087,7 @@ func main() {
 					cl2 := puppetdb.NewClientSSLMaster(c.MasterHost, c.MasterPort, c.Key, c.Cert, c.Ca, c.Debug)
 					_, err := cl2.Master()
 					if err != nil {
-						print(err.Error())
+						log.Println(err.Error())
 						masterState.WithLabelValues(c.MasterHost, "unknown", "down", "error").Set(0.0)
 					} else {
 						GeneratePuppetMasterMetrics(cl2, c.MasterHost, false)
@@ -1126,7 +1129,7 @@ func main() {
 					cl2 := puppetdb.NewClientSSLInsecureMaster(c.MasterHost, c.MasterPort, c.Debug)
 					_, err := cl2.Master()
 					if err != nil {
-						print(err.Error())
+						log.Println(err.Error())
 						masterState.WithLabelValues(c.MasterHost, "unknown", "down", "error").Set(0.0)
 					} else {
 						GeneratePuppetMasterMetrics(cl2, c.MasterHost, false)
