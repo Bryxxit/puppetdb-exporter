@@ -173,6 +173,22 @@ var timeLastReportNodeGuage = prometheus.NewGaugeVec(
 	[]string{"puppet_environment", "node"},
 )
 
+var timeLastReportStartNodeGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppetdb_last_report_start_time_node_guage",
+		Help: "Automated guage for the last start report time of a node",
+	},
+	[]string{"puppet_environment", "node"},
+)
+
+var timeLastReportEndNodeGuage = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "puppetdb_last_report_end_time_node_guage",
+		Help: "Automated guage for the last end report time of a node",
+	},
+	[]string{"puppet_environment", "node"},
+)
+
 var masterHTTPGuage = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "puppet_master_http_guage",
@@ -686,7 +702,8 @@ func addGaugeMetricStatusString(reports []puppetdb.ReportJSON, nodes bool, node 
 		failed := 0.0
 		corChanges := 0.0
 		changes := 0.0
-
+		addLastReportStartTimeMetric(report, node)
+		addLastReportEndTimeMetric(report, node)
 		for _, metric := range report.Metrics.Data {
 			if metric.Category == "time" {
 				*timeArr = append(*timeArr, ReportsMetricEntry{metric.Name, report.Environment, report.CertName, metric.Value})
@@ -807,6 +824,35 @@ func addLastReportTimeMetric(node puppetdb.NodeJSON) {
 		}
 		duration := time.Since(t).Seconds()
 		timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+
+	}
+
+}
+
+func addLastReportStartTimeMetric(rep puppetdb.ReportJSON, node puppetdb.NodeJSON) {
+	if node.ReportTimestamp != "" && rep.StartTime != "" {
+		layout := "2006-01-02T15:04:05.000Z"
+		t, err := time.Parse(layout, rep.StartTime)
+		if err != nil {
+			log.Println(err.Error())
+		}
+		duration := time.Since(t).Seconds()
+		timeLastReportStartNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+
+	}
+
+}
+
+func addLastReportEndTimeMetric(rep puppetdb.ReportJSON, node puppetdb.NodeJSON) {
+	if node.ReportTimestamp != "" && rep.EndTime != "" {
+		layout := "2006-01-02T15:04:05.000Z"
+		t, err := time.Parse(layout, rep.EndTime)
+		if err != nil {
+			log.Println(err.Error())
+		}
+		duration := time.Since(t).Seconds()
+		timeLastReportEndNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+
 	}
 
 }
@@ -1009,6 +1055,8 @@ func init() {
 	prometheus.MustRegister(timeNodeGuage)
 	prometheus.MustRegister(eventNodeGuage)
 	prometheus.MustRegister(timeLastReportNodeGuage)
+	prometheus.MustRegister(timeLastReportStartNodeGuage)
+	prometheus.MustRegister(timeLastReportEndNodeGuage)
 
 	prometheus.MustRegister(masterHTTPGuage)
 	prometheus.MustRegister(masterHTTPClientGuage)
