@@ -170,7 +170,7 @@ var timeLastReportNodeGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_last_report_time_node_guage",
 		Help: "Automated guage for the last report time of a node",
 	},
-	[]string{"puppet_environment", "node"},
+	[]string{"puppet_environment", "node", "date"},
 )
 
 var timeLastReportStartNodeGuage = prometheus.NewGaugeVec(
@@ -178,7 +178,7 @@ var timeLastReportStartNodeGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_last_report_start_time_node_guage",
 		Help: "Automated guage for the last start report time of a node",
 	},
-	[]string{"puppet_environment", "node"},
+	[]string{"puppet_environment", "node", "date"},
 )
 
 var timeLastReportEndNodeGuage = prometheus.NewGaugeVec(
@@ -186,7 +186,7 @@ var timeLastReportEndNodeGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_last_report_end_time_node_guage",
 		Help: "Automated guage for the last end report time of a node",
 	},
-	[]string{"puppet_environment", "node"},
+	[]string{"puppet_environment", "node", "date"},
 )
 
 var masterHTTPGuage = prometheus.NewGaugeVec(
@@ -822,8 +822,9 @@ func addLastReportTimeMetric(node puppetdb.NodeJSON) {
 		if err != nil {
 			log.Println(err.Error())
 		}
-		duration := time.Since(t).Seconds()
-		timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+		//duration := time.Since(t).Seconds()
+		unixTime := t.Unix()
+		timeLastReportNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname, t.Format("2006-01-02 15:04:05")).Set(float64(unixTime))
 
 	}
 
@@ -836,8 +837,8 @@ func addLastReportStartTimeMetric(rep puppetdb.ReportJSON, node puppetdb.NodeJSO
 		if err != nil {
 			log.Println(err.Error())
 		}
-		duration := time.Since(t).Seconds()
-		timeLastReportStartNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+		unixTime := t.Unix()
+		timeLastReportStartNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname, t.Format("2006-01-02 15:04:05")).Set(float64(unixTime))
 
 	}
 
@@ -850,8 +851,8 @@ func addLastReportEndTimeMetric(rep puppetdb.ReportJSON, node puppetdb.NodeJSON)
 		if err != nil {
 			log.Println(err.Error())
 		}
-		duration := time.Since(t).Seconds()
-		timeLastReportEndNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname).Set(duration)
+		unixTime := t.Unix()
+		timeLastReportEndNodeGuage.WithLabelValues(node.ReportEnvironment, node.Certname, t.Format("2006-01-02 15:04:05")).Set(float64(unixTime))
 
 	}
 
