@@ -15,6 +15,8 @@ It will also gather information about the status of your Puppet infrastructure (
 ```
 Alternatively you can download the latest release here
 https://github.com/Bryxxit/puppetdb-exporter/releases
+The servcie runs on port 8156 by default so: http://localhost:8156/
+
 
 * run `./puppetdb_exporter` to start the exporter service
 

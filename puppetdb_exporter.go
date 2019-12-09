@@ -138,7 +138,7 @@ var statusNodesGuage = prometheus.NewGaugeVec(
 		Name: "puppetdb_status_node_guage",
 		Help: "Automated count for the report status per node",
 	},
-	[]string{"status", "value", "puppet_environment", "node"},
+	[]string{"status", "puppet_environment", "node"},
 )
 
 var resourcesNodeGuage = prometheus.NewGaugeVec(
@@ -386,7 +386,7 @@ func stringInSlice(a string, list []string) bool {
 
 func getAllPathsForFact(fact gabs.Container, path string, regex string, factEntry puppetdb.FactJSON, nodes bool,
 	totalArr *map[string]map[string]int, arrG *[][]FactGuageEntry, arrG2 *[][]FactNodeGuageEntry) {
-	cont, _ := fact.ChildrenMap()
+	cont := fact.ChildrenMap()
 	for key, val := range cont {
 		check := reflect.TypeOf(val.Data()).String()
 		//println(path, check)
@@ -436,7 +436,7 @@ func getAllPathsForFact(fact gabs.Container, path string, regex string, factEntr
 		} else if check == "map[string]interface {}" {
 			getAllPathsForFact(*val, path+"."+key, regex, factEntry, nodes, totalArr, arrG, arrG2)
 		} else if check == "[]interface {}" {
-			arr, _ := val.Children()
+			arr := val.Children()
 			for index, val2 := range arr {
 				str1 := fmt.Sprintf("%s.%s[%d]", path, key, index)
 				getAllPathsForFact(*val2, str1, regex, factEntry, nodes, totalArr, arrG, arrG2)
@@ -690,7 +690,9 @@ func GenerateReportsMetrics(c *puppetdb.Client, nodes bool, debug bool, timeout 
 
 	statusNodesGuage.Reset()
 	for _, entry := range *nodeStatusArr {
-		statusNodesGuage.WithLabelValues(entry.Status, entry.Value, entry.Environment, entry.Certname).Inc()
+		if s, err := strconv.ParseFloat(entry.Value, 64); err == nil {
+			statusNodesGuage.WithLabelValues(entry.Status, entry.Environment, entry.Certname).Set(s)
+		}
 	}
 }
 
