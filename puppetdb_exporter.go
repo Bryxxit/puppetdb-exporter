@@ -478,6 +478,9 @@ func gatherMetrics(facts []puppetdb.FactJSON, path string, nodes bool, factArr *
 		case "int":
 			addGaugeMetricfactsIntOrFloatPath2(facts, path, &arr)
 			*arrG = append(*arrG, arr)
+		case "bool":
+			addGaugeMetricfactsStringPath2(facts, path, nodes, &arr2, factArr)
+			*arrG = append(*arrG, arr)
 		case "string":
 			addGaugeMetricfactsStringPath2(facts, path, nodes, &arr2, factArr)
 			*arrG2 = append(*arrG2, arr2)
@@ -523,38 +526,51 @@ func addGaugeMetricfactsIntOrFloatPath2(facts []puppetdb.FactJSON, path string, 
 // addGaugeMetricfactsStringPath2 If given metric was a float this will add a FactNodeGaugeEntry to the array and a total fact entry
 func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, nodes bool, arr *[]FactNodeGuageEntry, totalArr *map[string]map[string]int) {
 	for _, fact := range facts {
-		var value string
+		var value interface{}
+		var strValue string
 		if path != "" {
-			value = fact.Value.Path(path).Data().(string)
+			value = fact.Value.Path(path).Data()
+			switch value.(type) {
+			case bool:
+				strValue = fmt.Sprintf("%v", value)
+			default:
+				strValue = value.(string)
+			}
 			if _, ok := (*totalArr)[fact.Name+"."+path]; ok {
-				if _, ok := (*totalArr)[fact.Name+"."+path][value]; ok {
-					(*totalArr)[fact.Name+"."+path][value] = (*totalArr)[fact.Name+"."+path][value] + 1
+				if _, ok := (*totalArr)[fact.Name+"."+path][strValue]; ok {
+					(*totalArr)[fact.Name+"."+path][strValue] = (*totalArr)[fact.Name+"."+path][strValue] + 1
 				} else {
-					(*totalArr)[fact.Name+"."+path][value] = 1
+					(*totalArr)[fact.Name+"."+path][strValue] = 1
 				}
 			} else {
 				(*totalArr)[fact.Name+"."+path] = map[string]int{
-					value: 1,
+					strValue: 1,
 				}
 			}
 			if nodes {
-				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
+				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: strValue, CertName: fact.CertName, Set: 1})
 			}
 		} else {
 			value = fact.Value.Data().(string)
+			switch value.(type) {
+			case bool:
+				strValue = fmt.Sprintf("%v", value)
+			default:
+				strValue = value.(string)
+			}
 			if _, ok := (*totalArr)[fact.Name]; ok {
-				if _, ok := (*totalArr)[fact.Name][value]; ok {
-					(*totalArr)[fact.Name][value] = (*totalArr)[fact.Name][value] + 1
+				if _, ok := (*totalArr)[fact.Name][strValue]; ok {
+					(*totalArr)[fact.Name][strValue] = (*totalArr)[fact.Name][strValue] + 1
 				} else {
-					(*totalArr)[fact.Name][value] = 1
+					(*totalArr)[fact.Name][strValue] = 1
 				}
 			} else {
 				(*totalArr)[fact.Name] = map[string]int{
-					value: 1,
+					strValue: 1,
 				}
 			}
 			if nodes {
-				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: value, CertName: fact.CertName, Set: 1})
+				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: strValue, CertName: fact.CertName, Set: 1})
 			}
 
 		}
