@@ -554,12 +554,18 @@ func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, node
 				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: strValue, CertName: fact.CertName, Set: 1})
 			}
 		} else {
-			value = fact.Value.Data().(string)
+			var value interface{}
+			var strValue string
+			value = fact.Value.Data()
+
 			switch value.(type) {
 			case bool:
 				strValue = fmt.Sprintf("%v", value)
-			default:
+			case string:
 				strValue = value.(string)
+			default:
+				strValue = fmt.Sprintf("%v", value)
+
 			}
 			if _, ok := (*totalArr)[fact.Name]; ok {
 				if _, ok := (*totalArr)[fact.Name][strValue]; ok {
