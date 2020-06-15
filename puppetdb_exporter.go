@@ -480,7 +480,7 @@ func gatherMetrics(facts []puppetdb.FactJSON, path string, nodes bool, factArr *
 			*arrG = append(*arrG, arr)
 		case "bool":
 			addGaugeMetricfactsStringPath2(facts, path, nodes, &arr2, factArr)
-			*arrG = append(*arrG, arr)
+			*arrG2 = append(*arrG2, arr2)
 		case "string":
 			addGaugeMetricfactsStringPath2(facts, path, nodes, &arr2, factArr)
 			*arrG2 = append(*arrG2, arr2)
@@ -551,7 +551,7 @@ func addGaugeMetricfactsStringPath2(facts []puppetdb.FactJSON, path string, node
 				}
 			}
 			if nodes {
-				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name, Environment: fact.Environment, Value: strValue, CertName: fact.CertName, Set: 1})
+				*arr = append(*arr, FactNodeGuageEntry{Name: fact.Name + "." + path, Environment: fact.Environment, Value: strValue, CertName: fact.CertName, Set: 1})
 			}
 		} else {
 			var value interface{}
