@@ -390,26 +390,36 @@ func getAllPathsForFact(fact gabs.Container, path string, regex string, factEntr
 	for key, val := range cont {
 		check := reflect.TypeOf(val.Data()).String()
 		//println(path, check)
-		if check == "string" {
+		if check == "string" || check == "bool" {
 			match, _ := regexp.MatchString(regex, path+"."+key)
 			if match {
 				// adding stuff
+				strValue := ""
+				value := val.Data()
+				switch value.(type) {
+				case bool:
+					strValue = fmt.Sprintf("%v", value)
+				case string:
+					strValue = value.(string)
+				default:
+					strValue = fmt.Sprintf("%v", value)
 
+				}
 				//value := factEntry.Value.Data().(string)
 				if _, ok := (*totalArr)[path+"."+key]; ok {
-					if _, ok := (*totalArr)[path+"."+key][val.Data().(string)]; ok {
-						(*totalArr)[path+"."+key][val.Data().(string)] = (*totalArr)[path+"."+key][val.Data().(string)] + 1
+					if _, ok := (*totalArr)[path+"."+key][strValue]; ok {
+						(*totalArr)[path+"."+key][strValue] = (*totalArr)[path+"."+key][strValue] + 1
 					} else {
-						(*totalArr)[path+"."+key][val.Data().(string)] = 1
+						(*totalArr)[path+"."+key][strValue] = 1
 					}
 				} else {
 					(*totalArr)[path+"."+key] = map[string]int{
-						val.Data().(string): 1,
+						strValue: 1,
 					}
 				}
 				if nodes {
 					ae := FactNodeGuageEntry{Name: path + "." + key, Environment: factEntry.Environment,
-						Value: val.Data().(string), CertName: factEntry.CertName, Set: 1}
+						Value: strValue, CertName: factEntry.CertName, Set: 1}
 					aeA := []FactNodeGuageEntry{ae}
 					*arrG2 = append(*arrG2, aeA)
 				}
