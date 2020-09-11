@@ -521,12 +521,23 @@ func addGaugeMetricfactsIntOrFloatPath2(facts []puppetdb.FactJSON, path string, 
 
 	for _, fact := range facts {
 		var value interface{}
+
 		if path != "" {
 			value = fact.Value.Path(path).Data()
-			*arr = append(*arr, FactGuageEntry{fact.Name + "." + path, fact.Environment, fact.CertName, value.(float64)})
+			inter := fmt.Sprintf("%v", value)
+			f, err := strconv.ParseFloat(inter, 64)
+			if err != nil {
+				f = 0.0
+			}
+			*arr = append(*arr, FactGuageEntry{fact.Name + "." + path, fact.Environment, fact.CertName, f})
 		} else {
 			value = fact.Value.Data()
-			*arr = append(*arr, FactGuageEntry{fact.Name, fact.Environment, fact.CertName, value.(float64)})
+			inter := fmt.Sprintf("%v", value)
+			f, err := strconv.ParseFloat(inter, 64)
+			if err != nil {
+				f = 0.0
+			}
+			*arr = append(*arr, FactGuageEntry{fact.Name, fact.Environment, fact.CertName, f})
 
 		}
 
