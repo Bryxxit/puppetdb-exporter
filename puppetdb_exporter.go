@@ -9,10 +9,11 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
-
+	// TODO don't use your fork
 	"github.com/negast/go-puppetdb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,20 +29,21 @@ var (
 
 // Conf the configuration file object for this exporter
 type Conf struct {
-	Facts        []string `yaml:"facts"`
-	Nodes        bool     `yaml:"nodes"`
-	Host         string   `yaml:"host"`
-	Port         int      `yaml:"port"`
-	MasterEnable bool     `yaml:"masterEnable"`
-	MasterHost   string   `yaml:"masterHost"`
-	MasterPort   int      `yaml:"masterPort"`
-	SSL          bool     `yaml:"ssl"`
-	Key          string   `yaml:"key"`
-	Ca           string   `yaml:"ca"`
-	Cert         string   `yaml:"cert"`
-	Interval     int      `yaml:"interval"`
-	Debug        bool     `yaml:"debug"`
-	Timeout      int      `yaml:"timeout"`
+	Facts        []string            `yaml:"facts"`
+	FactBundles  map[string][]string `yaml:"fact_bundles"`
+	Nodes        bool                `yaml:"nodes"`
+	Host         string              `yaml:"host"`
+	Port         int                 `yaml:"port"`
+	MasterEnable bool                `yaml:"masterEnable"`
+	MasterHost   string              `yaml:"masterHost"`
+	MasterPort   int                 `yaml:"masterPort"`
+	SSL          bool                `yaml:"ssl"`
+	Key          string              `yaml:"key"`
+	Ca           string              `yaml:"ca"`
+	Cert         string              `yaml:"cert"`
+	Interval     int                 `yaml:"interval"`
+	Debug        bool                `yaml:"debug"`
+	Timeout      int                 `yaml:"timeout"`
 }
 
 func (c *Conf) getConf(configFile string) *Conf {
@@ -75,6 +77,20 @@ type FactNodeGuageEntry struct {
 	Set         float64
 }
 
+// FactNodeGuageEntry Contains the information for one node fact entry
+type FactBundleNodeGuageEntry struct {
+	Name        string
+	Environment string
+	Values      []LabelValue
+	CertName    string
+}
+
+// LabelValue holds the data for a value combined with the label mostly this is the fact name for bundles
+type LabelValue struct {
+	Name  string
+	Value string
+}
+
 // ReportsMetricEntry Holds data for an entry in the reports metric api
 type ReportsMetricEntry struct {
 	Name        string
@@ -94,6 +110,8 @@ type NodeStatusEntry struct {
 //  END MODELS AND VARIABLES
 
 //  START GUAGES
+var bundleGuages map[string]*prometheus.GaugeVec
+
 var puppetDBGuage = prometheus.NewGauge(
 	prometheus.GaugeOpts{
 		Name: "puppetdb_connection_up",
@@ -330,15 +348,126 @@ var masterState = prometheus.NewGaugeVec(
 // START FACT GATHERING METHODS
 
 // GenerateFactsMetrics Scrapes the facts metrics defined in the yaml file and exports them to the prometheus exporter
-func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug bool) {
-	if debug {
-		log.Println("Resetting facts interfaces.")
-	}
-	//t1 := time.Now()
-	if debug {
-		log.Println("Done resetting facts interfaces.")
-	}
+func GenerateFactsMetrics(c *puppetdb.Client, conf Conf) {
 	// collect metrics
+
+	if bundleGuages != nil {
+		certnames := GetAllCertnames(c)
+		for key, g := range bundleGuages {
+			// Steps
+			// 1 Loop trough all fact names in a bundle
+			facts_to_collect := conf.FactBundles[key]
+			sort.Strings(facts_to_collect)
+			_, arr2G, arr2G2 := GatherMetricArrays(facts_to_collect, conf, c, true)
+			// 2 we need to check if each node in each array and then we need to collect this data in ine entry
+			mapy := getBundleEntriesFromArrays(arr2G, arr2G2, facts_to_collect, certnames, key)
+			setBundleFactMetrics(mapy, g)
+		}
+	}
+	factArr, arrG, arrG2 := GatherMetricArrays(conf.Facts, conf, c, true)
+	setFactMetrics(factArr, arrG, arrG2, conf.Nodes)
+
+}
+
+// GetAllCertnames get all the certnames for the nodes in your env
+func GetAllCertnames(c *puppetdb.Client) []string {
+	certnames := []string{}
+	nodes, err := c.Nodes()
+	if err == nil {
+		for _, n := range nodes {
+			if !stringInSlice(n.Certname, certnames) {
+				certnames = append(certnames, n.Certname)
+			}
+		}
+
+	}
+
+	return certnames
+}
+
+func getBundleEntriesFromArrays(arr1 [][]FactGuageEntry, arr2 [][]FactNodeGuageEntry, facts []string, certnames []string, bundleName string) map[string]FactBundleNodeGuageEntry {
+	mapy := map[string]FactBundleNodeGuageEntry{}
+	mapy_to_return := map[string]FactBundleNodeGuageEntry{}
+	numberofHits := len(facts)
+
+	for _, certname := range certnames {
+		for _, arr := range arr1 {
+			val := getStructFromFactGaugeArray(certname, arr)
+			if val != nil {
+				str := fmt.Sprintf("%.2f", val.Set)
+				lbl := LabelValue{
+					Name:  val.Name,
+					Value: str,
+				}
+				if _, ok := mapy[certname]; ok {
+					v := mapy[certname]
+					v.Values = append(mapy[certname].Values, lbl)
+					mapy[certname] = v
+				} else {
+					v := FactBundleNodeGuageEntry{
+						Name:        bundleName,
+						Environment: val.Environment,
+						Values:      []LabelValue{lbl},
+						CertName:    certname,
+					}
+					mapy[certname] = v
+				}
+			}
+		}
+
+		for _, arr := range arr2 {
+			val := getStructFromNodeFactGaugeArray(certname, arr)
+			if val != nil {
+				lbl := LabelValue{
+					Name:  val.Name,
+					Value: val.Value,
+				}
+				if _, ok := mapy[certname]; ok {
+					v := mapy[certname]
+					v.Values = append(mapy[certname].Values, lbl)
+					mapy[certname] = v
+				} else {
+					v := FactBundleNodeGuageEntry{
+						Name:        bundleName,
+						Environment: val.Environment,
+						Values:      []LabelValue{lbl},
+						CertName:    certname,
+					}
+					mapy[certname] = v
+				}
+			}
+		}
+
+	}
+	// 3 filter out all values that don't have all the label values?
+	for key, val := range mapy {
+		if len(val.Values) == numberofHits {
+			mapy_to_return[key] = val
+		}
+	}
+	return mapy_to_return
+}
+
+func getStructFromFactGaugeArray(cert string, arr1 []FactGuageEntry) *FactGuageEntry {
+	for _, entry := range arr1 {
+		if entry.CertName == cert {
+			return &entry
+		}
+	}
+	return nil
+}
+
+func getStructFromNodeFactGaugeArray(cert string, arr1 []FactNodeGuageEntry) *FactNodeGuageEntry {
+	for _, entry := range arr1 {
+		if entry.CertName == cert {
+			return &entry
+		}
+	}
+	return nil
+}
+
+// GatherMetricArrays gather the needed arrays for a bunch of facts
+func GatherMetricArrays(facts []string, conf Conf, c *puppetdb.Client, allowWildCard bool) (map[string]map[string]int, [][]FactGuageEntry, [][]FactNodeGuageEntry) {
 	factArr := map[string]map[string]int{}
 	arrG := [][]FactGuageEntry{}
 	arrG2 := [][]FactNodeGuageEntry{}
@@ -346,25 +475,25 @@ func GenerateFactsMetrics(facts []string, c *puppetdb.Client, nodes bool, debug 
 		fA := strings.Split(fact, ".")
 
 		if strings.Contains(fact, "*") {
-			wildCardMetric(fact, c, nodes, &factArr, &arrG, &arrG2)
+			if allowWildCard {
+				wildCardMetric(fact, c, conf.Nodes, &factArr, &arrG, &arrG2)
+			}
 		} else {
 			if len(fA) == 1 {
 				facts2, _ := getBaseMetric(fA[0], c)
-				gatherMetrics(facts2, "", nodes, &factArr, &arrG, &arrG2)
+				gatherMetrics(facts2, "", conf.Nodes, &factArr, &arrG, &arrG2)
 
 			} else if len(fA) > 1 {
 				facts2, _ := getBaseMetric(fA[0], c)
 				pathA := append(fA[:0], fA[0+1:]...)
 				path := strings.Join(pathA, ".")
-				gatherMetrics(facts2, path, nodes, &factArr, &arrG, &arrG2)
+				gatherMetrics(facts2, path, conf.Nodes, &factArr, &arrG, &arrG2)
 
 			}
 		}
 
 	}
-
-	setFactMetrics(factArr, arrG, arrG2, nodes)
-
+	return factArr, arrG, arrG2
 }
 
 func wildCardMetric(factStr string, c *puppetdb.Client, nodes bool, factArr *map[string]map[string]int, arrG *[][]FactGuageEntry, arrG2 *[][]FactNodeGuageEntry) {
@@ -629,6 +758,24 @@ func setFactMetrics(factArr map[string]map[string]int, arrG [][]FactGuageEntry, 
 				factNodeGuage.WithLabelValues(nf.Name, nf.Environment, nf.CertName, nf.Value).Set(1)
 			}
 		}
+	}
+
+}
+
+// setBundleFactMetrics Resets the gauges and exports the given metrics
+func setBundleFactMetrics(mapy map[string]FactBundleNodeGuageEntry, g *prometheus.GaugeVec) {
+	g.Reset()
+	for _, val := range mapy {
+		//"bundlename", "puppet_environment", "node"
+		sort.Slice(val.Values[:], func(i, j int) bool {
+			return val.Values[i].Name < val.Values[j].Name
+		})
+		arr := []string{val.Name, val.Environment, val.CertName}
+		for _, a := range val.Values {
+			arr = append(arr, a.Value)
+		}
+		g.WithLabelValues(arr...).Set(1.0)
+
 	}
 
 }
@@ -1133,6 +1280,36 @@ func init() {
 
 }
 
+func initFactBundleMetrics(c Conf) {
+
+	if c.FactBundles != nil {
+		for key, val := range c.FactBundles {
+			arr := []string{"bundlename", "puppet_environment", "node"}
+			sort.Strings(val)
+			arr = append(arr, val...)
+			g := prometheus.NewGaugeVec(
+				prometheus.GaugeOpts{
+					Name: "puppetdb_facts_bundle_" + strings.TrimSpace(key) + "_gauge",
+					Help: "Automated gauge for the fact bundle",
+				},
+				arr,
+			)
+
+			if bundleGuages == nil {
+				bundleGuages = map[string]*prometheus.GaugeVec{
+					key: g,
+				}
+			} else {
+				bundleGuages[key] = g
+
+			}
+			prometheus.MustRegister(g)
+
+		}
+
+	}
+}
+
 func main() {
 	flag.Parse()
 
@@ -1154,6 +1331,12 @@ func main() {
 		c.Timeout = 3600
 	}
 
+	//c.FactBundles = map[string][]string{"ips": []string{
+	//	"ipaddress_eth2", "ipaddress_eth0", "ipaddress_eth1",
+	//}}
+	//c.Nodes = true
+	initFactBundleMetrics(c)
+
 	//c.Debug = true
 	if c.SSL {
 		if c.Debug {
@@ -1162,7 +1345,7 @@ func main() {
 		go func() {
 			for {
 				cl := puppetdb.NewClientSSL(c.Host, c.Port, c.Key, c.Cert, c.Ca, false)
-				GenerateFactsMetrics(c.Facts, cl, c.Nodes, c.Debug)
+				GenerateFactsMetrics(cl, c)
 				GenerateReportsMetrics(cl, c.Nodes, c.Debug, c.Timeout)
 				i := time.Duration(15)
 				if c.Interval != 0 {
@@ -1203,7 +1386,7 @@ func main() {
 		go func() {
 			for {
 				cl := puppetdb.NewClient(c.Host, c.Port, false)
-				GenerateFactsMetrics(c.Facts, cl, c.Nodes, c.Debug)
+				GenerateFactsMetrics(cl, c)
 				GenerateReportsMetrics(cl, c.Nodes, c.Debug, c.Timeout)
 				i := time.Duration(15)
 				if c.Interval != 0 {

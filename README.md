@@ -1,9 +1,13 @@
 # Prometheus PuppetDB exporter
 
-This is our implementation of a prometheus exporter for your Puppet environment. It exports facts from PuppetDB, so you can create metrics about your environment, based on them.
+This is our implementation of a prometheus exporter for your Puppet environment. You can gather facts with this and export them to prometheus.
+Other things are collected as well such as:
+ - Master performance metrics: jruby, jvm, http,...
+ - the reports api is also evaluated so that each compile time is exported.
+ -
+Gathering facts can be done with wildcards. You can now also define fact bundles so that a bunch of facts are set on a single entry.
 
-It will also gather information about the status of your Puppet infrastructure (Puppet master health and performance).
-
+If you have any requests or issues you can always create an issue on the issues page.
 
 ## Quick start
 
@@ -15,7 +19,7 @@ It will also gather information about the status of your Puppet infrastructure (
 ```
 Alternatively you can download the latest release here
 https://github.com/Bryxxit/puppetdb-exporter/releases
-The servcie runs on port 8156 by default so: http://localhost:8156/
+The service runs on port 8156 by default so: http://localhost:8156/
 
 
 * run `./puppetdb_exporter` to start the exporter service
@@ -38,6 +42,8 @@ facts:
   - 'os.family'
   - 'operatingsystemrelease'
   - 'networking.*'
+fact_bundles:
+  ips: ["ipaddress_eth2", "ipaddress_eth0", "ipaddress_eth1"]
 nodes: true
 debug: true
 masterEnable: true
@@ -64,3 +70,21 @@ The following table will outline all possible parameters you can use in the conf
 |`masterEnable` | Boolean |Whether to gather puppet master metrics or not |             |
 |`masterHost`   | String |The puppet master ip/hostname | host        |
 |`MasterPort`   | Number |The puppet masters port | `8140`      |
+|`fact_bundles`  | map[string][]string | This is a hash where each key holds a list of facts. These will be combined into one label. So you can get al info in one join. FLoat/int is converted to string, wildcards are not allowed
+
+
+## examples of metrics
+### master metrics
+puppet_master_jvm_guage{instance="node",job="puppetdb",master="puppet",metric="cpu_usage"}	0.099980004
+puppet_master_jvm_guage{instance="node",job="puppetdb",master="puppet",metric="gc_cpu_usage"}	0
+puppet_master_jvm_guage{instance="node",job="puppetdb",master="puppet",metric="start_time_ms"}	1598422004112
+puppet_master_jvm_guage{instance="node",job="puppetdb",master="puppet",metric="up_time_ms"}	4339825280
+....
+### reports metrics
+puppetdb_report_time_node_guage{name="exec",node="node",puppet_environment="production"} 5.094761
+puppetdb_report_time_node_guage{name="fact_generation",node="node",puppet_environment="production"} 1.1460241749882698
+....
+### facts metrics
+puppetdb_facts_bundle_ips_gauge{bundlename="ips",ipaddress_eth0="xxx",ipaddress_eth1="xxx",ipaddress_eth2="xxx",node="node",puppet_environment="development"} 1
+puppetdb_facts_total{fact="is_virtual",instance="node",job="puppetdb",value="true"}	xx
+...
