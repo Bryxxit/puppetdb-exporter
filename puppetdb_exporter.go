@@ -29,21 +29,22 @@ var (
 
 // Conf the configuration file object for this exporter
 type Conf struct {
-	Facts        []string            `yaml:"facts"`
-	FactBundles  map[string][]string `yaml:"fact_bundles"`
-	Nodes        bool                `yaml:"nodes"`
-	Host         string              `yaml:"host"`
-	Port         int                 `yaml:"port"`
-	MasterEnable bool                `yaml:"masterEnable"`
-	MasterHost   string              `yaml:"masterHost"`
-	MasterPort   int                 `yaml:"masterPort"`
-	SSL          bool                `yaml:"ssl"`
-	Key          string              `yaml:"key"`
-	Ca           string              `yaml:"ca"`
-	Cert         string              `yaml:"cert"`
-	Interval     int                 `yaml:"interval"`
-	Debug        bool                `yaml:"debug"`
-	Timeout      int                 `yaml:"timeout"`
+	Facts         []string            `yaml:"facts"`
+	FactBundles   map[string][]string `yaml:"fact_bundles"`
+	Nodes         bool                `yaml:"nodes"`
+	Host          string              `yaml:"host"`
+	Port          int                 `yaml:"port"`
+	MasterEnable  bool                `yaml:"masterEnable"`
+	MasterHost    string              `yaml:"masterHost"`
+	MasterPort    int                 `yaml:"masterPort"`
+	SSL           bool                `yaml:"ssl"`
+	Key           string              `yaml:"key"`
+	Ca            string              `yaml:"ca"`
+	Cert          string              `yaml:"cert"`
+	Interval      int                 `yaml:"interval"`
+	Debug         bool                `yaml:"debug"`
+	Timeout       int                 `yaml:"timeout"`
+	ClientTimeout int                 `yaml:"client_timeout"`
 }
 
 func (c *Conf) getConf(configFile string) *Conf {
@@ -1344,7 +1345,13 @@ func main() {
 		}
 		go func() {
 			for {
-				cl := puppetdb.NewClientSSL(c.Host, c.Port, c.Key, c.Cert, c.Ca, false)
+				var cl *puppetdb.Client
+				if c.ClientTimeout <= 0 {
+					cl = puppetdb.NewClientSSL(c.Host, c.Port, c.Key, c.Cert, c.Ca, false)
+				} else {
+					cl = puppetdb.NewClientTimeoutSSL(c.Host, c.Port, c.Key, c.Cert, c.Ca, false, c.Timeout)
+
+				}
 				GenerateFactsMetrics(cl, c)
 				GenerateReportsMetrics(cl, c.Nodes, c.Debug, c.Timeout)
 				i := time.Duration(15)
@@ -1385,7 +1392,13 @@ func main() {
 		}
 		go func() {
 			for {
-				cl := puppetdb.NewClient(c.Host, c.Port, false)
+				var cl *puppetdb.Client
+				if c.ClientTimeout <= 0 {
+					cl = puppetdb.NewClient(c.Host, c.Port, false)
+				} else {
+					cl = puppetdb.NewClientTimeout(c.Host, c.Port, false, c.Timeout)
+
+				}
 				GenerateFactsMetrics(cl, c)
 				GenerateReportsMetrics(cl, c.Nodes, c.Debug, c.Timeout)
 				i := time.Duration(15)
