@@ -1288,9 +1288,17 @@ func initFactBundleMetrics(c Conf) {
 			arr := []string{"bundlename", "puppet_environment", "node"}
 			sort.Strings(val)
 			arr = append(arr, val...)
+
+			for i, a := range arr {
+				n := strings.TrimSpace(a)
+				n = strings.ReplaceAll(n, ".", "_")
+				arr[i] = n
+			}
+			name := strings.TrimSpace(key)
+			name = strings.ReplaceAll(name, ".", "_")
 			g := prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
-					Name: "puppetdb_facts_bundle_" + strings.TrimSpace(key) + "_gauge",
+					Name: "puppetdb_facts_bundle_" + name + "_gauge",
 					Help: "Automated gauge for the fact bundle",
 				},
 				arr,
